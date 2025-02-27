@@ -26,6 +26,12 @@ def generate_launch_description():
         parameters=[{'robot_description': open(urdf_file).read()}]
     )
 
+    feature_extractor_node = Node(
+        package='robot_localization_package',
+        executable='feature_extractor',
+        output='screen'
+    )
+
      # estimates pose in `map` frame
     particle_filter_node = Node(
         package='robot_localization_package',
@@ -48,6 +54,10 @@ def generate_launch_description():
         output='screen'
     )
 
+    rviz_config_file = os.path.join(local_share, 'resource', 'rviz_config.rviz')
+    if not os.path.exists(rviz_config_file):
+        print("⚠️ Warning: RViz config file not found. Defaulting to empty visualization.")
+
     # ver onde ir buscar isto tbm
     rviz_config_file = os.path.join(local_share, 'resource', 'rviz_config.rviz')
     rviz_node = Node(
@@ -69,8 +79,9 @@ def generate_launch_description():
     return LaunchDescription([
         webots_launch,
         rsp_node,
-        map_server_node,
+        feature_extractor_node,
         particle_filter_node,
+        map_server_node,
         rviz_node,
         teleop_node
     ])

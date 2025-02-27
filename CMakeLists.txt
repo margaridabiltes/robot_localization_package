@@ -12,13 +12,19 @@ find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(webots_ros2_epuck REQUIRED)
 
 add_executable(particle_filter src/particle_filter.cpp)
-ament_target_dependencies(particle_filter rclcpp nav_msgs sensor_msgs geometry_msgs tf2_ros)
+#add_executable(feature_extractor src/feature_extractor.cpp)
+
+# Link dependencies
+ament_target_dependencies(particle_filter rclcpp nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_geometry_msgs)
+#ament_target_dependencies(feature_extractor rclcpp geometry_msgs sensor_msgs)
 
 install(TARGETS
   particle_filter
+  #feature_extractor
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -36,3 +42,5 @@ if(BUILD_TESTING)
 endif()
 
 ament_package()
+
+
