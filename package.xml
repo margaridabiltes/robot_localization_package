@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_localization_package</name>
   <version>0.0.1</version>
-  <description>Particle Filter for Robot Localization<description>
+  <description>Particle Filter for Robot Localization</description>
   <maintainer email="biltes@todo.todo">biltes</maintainer>
   <license>Apache License 2.0</license>
 
