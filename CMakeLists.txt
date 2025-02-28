@@ -5,22 +5,31 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Find ROS 2 dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
+find_package(rclcpp REQUIRED) 
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
+
+include_directories(
+  include
+  ${rclcpp_INCLUDE_DIRS}  
+)
+
+# Add Executables
 add_executable(particle_filter src/particle_filter.cpp)
 add_executable(feature_extractor src/feature_extractor.cpp)
 
-# Link dependencies
-ament_target_dependencies(particle_filter rclcpp nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_geometry_msgs)
-ament_target_dependencies(feature_extractor rclcpp geometry_msgs sensor_msgs)
+# Link Dependencies
+ament_target_dependencies(particle_filter rclcpp nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_geometry_msgs visualization_msgs)
+ament_target_dependencies(feature_extractor rclcpp sensor_msgs tf2_ros tf2_geometry_msgs)
 
+# Install Executables
 install(TARGETS
   particle_filter
   feature_extractor
@@ -33,19 +42,11 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
-
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
 
 ament_package()
-
-
