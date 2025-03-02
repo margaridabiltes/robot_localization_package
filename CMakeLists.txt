@@ -12,7 +12,31 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(webots_ros2_driver REQUIRED)
+find_package(tf2_ros REQUIRED)
 
+## Fake feature extractor
+include_directories(
+  include
+)
+add_executable(fake_feature_extractor
+  src/fake_feature_extractor.cpp
+)
+ament_target_dependencies(fake_feature_extractor
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  tf2_ros
+)
+install(TARGETS
+  fake_feature_extractor
+  DESTINATION lib/${PROJECT_NAME}
+)
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
+
+## MyRobotDriver 
 # Export the plugin configuration file
 pluginlib_export_plugin_description_file(webots_ros2_driver my_robot_driver.xml)
 

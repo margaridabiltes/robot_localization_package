@@ -11,10 +11,6 @@ def generate_launch_description():
     package_dir = get_package_share_directory('robot_localization_package')
     robot_description_path = os.path.join(package_dir, 'resource', 'my_robot.urdf')
 
-    webots = WebotsLauncher(
-        world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt')
-    )
-
     my_robot_driver = WebotsController(
         robot_name='my_robot',
         parameters=[
