@@ -1,52 +1,55 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.5)
 project(robot_localization_package)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
 endif()
 
-# Find ROS 2 dependencies
+# Besides the package specific dependencies we also need the `pluginlib` and `webots_ros2_driver`
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED) 
-find_package(nav_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
-find_package(tf2_geometry_msgs REQUIRED)
-find_package(visualization_msgs REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(webots_ros2_driver REQUIRED)
 
+# Export the plugin configuration file
+pluginlib_export_plugin_description_file(webots_ros2_driver my_robot_driver.xml)
 
-include_directories(
+# MyRobotDriver library
+add_library(
+  ${PROJECT_NAME}
+  SHARED
+  src/MyRobotDriver.cpp
+)
+target_include_directories(
+  ${PROJECT_NAME}
+  PRIVATE
   include
-  ${rclcpp_INCLUDE_DIRS}  
 )
-
-# Add Executables
-add_executable(particle_filter src/particle_filter.cpp)
-add_executable(feature_extractor src/feature_extractor.cpp)
-
-# Link Dependencies
-ament_target_dependencies(particle_filter rclcpp nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_geometry_msgs visualization_msgs)
-ament_target_dependencies(feature_extractor rclcpp sensor_msgs tf2_ros tf2_geometry_msgs)
-
-# Install Executables
+ament_target_dependencies(
+  ${PROJECT_NAME}
+  pluginlib
+  rclcpp
+  webots_ros2_driver
+)
 install(TARGETS
-  particle_filter
-  feature_extractor
-  DESTINATION lib/${PROJECT_NAME}
+  ${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
-
+# Install additional directories.
 install(DIRECTORY
   launch
   resource
-  DESTINATION share/${PROJECT_NAME}
+  worlds
+  DESTINATION share/${PROJECT_NAME}/
 )
-
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  set(ament_cmake_copyright_FOUND TRUE)
-  set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
-endif()
-
+ament_export_include_directories(
+  include
+)
+ament_export_libraries(
+  ${PROJECT_NAME}
+)
 ament_package()

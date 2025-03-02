@@ -1,0 +1,197 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/factory/containers/protos/WoodenBox.proto"
+
+WorldInfo {
+  info [
+    "Simple e-puck simulation that can be controlled with ROS2."
+  ]
+  title "ROS2 simulation of the e-puck robot"
+  basicTimeStep 20
+}
+Viewpoint {
+  orientation -0.3259129066293485 0.6045847308938715 0.7268136490617071 1.2809214799066853
+  position -0.6554786770823011 -0.9985859086887117 1.3412109473782257
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 1.5 1.5
+}
+WoodenBox {
+  translation -0.265062 0.13 0.05
+  name "wooden box(1)"
+  size 0.1 0.1 0.1
+}
+WoodenBox {
+  translation -0.115895 -0.36 0.05
+  name "wooden box(2)"
+  size 0.1 0.1 0.1
+}
+WoodenBox {
+  translation 0.44 0.12 0.05
+  name "wooden box(3)"
+  size 0.1 0.1 0.1
+}
+WoodenBox {
+  translation 0.29726 -0.29 0.05
+  name "wooden box(4)"
+  size 0.1 0.1 0.1
+}
+WoodenBox {
+  translation -0.158467 0.26 0.05
+  size 0.1 0.1 0.1
+}
+DEF MY_ROBOT Robot {
+  translation 0.14787654662212163 -3.681841254097207e-07 -0.00020646607933590133
+  rotation -2.5210187468487695e-06 -0.9999999954646306 -9.520705298308794e-05 0.028926511466074986
+  children [
+    Lidar {
+      numberOfLayers 1
+    }
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        position 1.7860363493046087e-07
+        axis 0 1 0
+        anchor 0 0 0.025
+      }
+      device [
+        RotationalMotor {
+          name "left wheel motor"
+        }
+      ]
+      endPoint Solid {
+        translation 0 0.045 0.025
+        rotation 0 1 0 1.7881393432617193e-07
+        children [
+          DEF WHEEL Pose {
+            rotation 1 0 0 1.5707996938995747
+            children [
+              Shape {
+                appearance PBRAppearance {
+                  baseColor 1 0 0
+                  roughness 1
+                  metalness 0
+                }
+                geometry Cylinder {
+                  height 0.01
+                  radius 0.025
+                }
+              }
+            ]
+          }
+        ]
+        name "left wheel"
+        boundingObject USE WHEEL
+        physics Physics {
+        }
+        linearVelocity -3.112368083068358e-15 -4.714241455065526e-15 -1.6804013666191697e-16
+        angularVelocity 3.8740223082971447e-13 -1.4122392203056544e-13 -3.790098960840624e-14
+      }
+    }
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        position 1.784189541783309e-07
+        axis 0 1 0
+        anchor 0 0 0.025
+      }
+      device [
+        RotationalMotor {
+          name "right wheel motor"
+        }
+      ]
+      endPoint Solid {
+        translation 0 -0.04499999999999999 0.025
+        rotation 0 1 0 1.7881393432617193e-07
+        children [
+          USE WHEEL
+        ]
+        name "right wheel"
+        boundingObject USE WHEEL
+        physics Physics {
+        }
+        linearVelocity -3.845967082360457e-15 3.293531081821469e-16 3.7590518197982937e-17
+        angularVelocity -2.20518148345066e-13 -1.4117147854470512e-13 -3.313630942816584e-14
+      }
+    }
+    Pose {
+      translation 0 0 0.0415
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0 0 1
+            roughness 1
+            metalness 0
+          }
+          geometry DEF BODY Cylinder {
+            height 0.08
+            radius 0.045
+          }
+        }
+      ]
+    }
+    DistanceSensor {
+      translation 0.042 0.02 0.063
+      rotation 0 0 1 0.5236003061004253
+      children [
+        DEF SENSOR Pose {
+          rotation 0 1 0 1.5708
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 1 1 0
+                roughness 1
+                metalness 0
+              }
+              geometry Cylinder {
+                height 0.004
+                radius 0.008
+              }
+            }
+          ]
+        }
+      ]
+      name "ds0"
+      lookupTable [
+        0 1020 0
+        0.05 1020 0
+        0.15 0 0
+      ]
+      numberOfRays 2
+      aperture 1
+    }
+    DistanceSensor {
+      translation 0.042 -0.02 0.063
+      rotation 0 0 1 -0.5235996938995747
+      children [
+        USE SENSOR
+      ]
+      name "ds1"
+      lookupTable [
+        0 1020 0
+        0.05 1020 0
+        0.15 0 0
+      ]
+      numberOfRays 2
+      aperture 1
+    }
+  ]
+  name "my_robot"
+  boundingObject Pose {
+    translation 0 0 0.0415
+    children [
+      USE BODY
+    ]
+  }
+  physics Physics {
+  }
+  controller "<extern>"
+  supervisor TRUE
+  linearVelocity -5.9493229818290305e-15 -2.720492343457159e-16 6.344997206064293e-15
+  angularVelocity -5.45219438348918e-14 -1.4127186479198387e-13 -2.1985545234795983e-14
+}
