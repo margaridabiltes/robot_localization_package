@@ -1,4 +1,4 @@
-image: my_map_new.pgm
+image: my_map_new_rot.pgm
 mode: trinary
 resolution: 0.01
 origin: [-1.5, -1.5, 0]

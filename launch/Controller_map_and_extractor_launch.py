@@ -24,13 +24,6 @@ def generate_launch_description():
     return LaunchDescription([
         webots,
         my_robot_driver,
-        Node(  # ✅ Add RViz node
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2",
-            arguments=["-d", os.path.join(package_dir, "rviz", "tf_map_and_features.rviz")],  # ✅ Load the specific config file
-            output="screen"
-        ),
         Node(
             package="nav2_map_server",
             executable="map_server",
