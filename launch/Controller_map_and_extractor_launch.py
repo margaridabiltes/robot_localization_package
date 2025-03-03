@@ -18,22 +18,11 @@ def generate_launch_description():
         ]
     )
 
+    webots = WebotsLauncher(
+        world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt')
+    )
+
     return LaunchDescription([
-        my_robot_driver,
-        Node(  # ✅ Add RViz node
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2",
-            arguments=["-d", os.path.join(package_dir, "rviz", "tf_map_and_features.rviz")],  # ✅ Load the specific config file
-            output="screen"
-        ),
-        Node(
-            package="nav2_map_server",
-            executable="map_server",
-            name="map_server",
-            parameters=[{"yaml_filename": os.path.join(package_dir, "resource", "my_map.yaml")}],
-            output="screen"
-        ),
         Node(
             package="nav2_lifecycle_manager",
             executable="lifecycle_manager",
@@ -43,6 +32,20 @@ def generate_launch_description():
                 "autostart": True,
                 "node_names": ["map_server"]
             }]
+        ),
+        webots,
+        my_robot_driver,
+        Node(
+            package="nav2_map_server",
+            executable="map_server",
+            name="map_server",
+            parameters=[{
+                "yaml_filename": os.path.join(package_dir, "resource", "my_map.yaml"),
+                "topic_name": "/map",
+                "frame_id": "map",
+                "publish_period": 1.0
+            }],
+            output="screen"
         ),
         Node(
             package="tf2_ros",
@@ -56,5 +59,4 @@ def generate_launch_description():
             name="fake_feature_extractor",
             output="screen"
         )
-
     ])
