@@ -18,7 +18,12 @@ def generate_launch_description():
         ]
     )
 
+    webots = WebotsLauncher(
+        world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt')
+    )
+
     return LaunchDescription([
+        webots,
         my_robot_driver,
         Node(
             package="nav2_map_server",
