@@ -18,8 +18,12 @@ def generate_launch_description():
         ]
     )
 
+    webots = WebotsLauncher(
+        world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt')
+    )
+
     return LaunchDescription([
-       # webots,
+        webots,
         my_robot_driver,
         launch.actions.RegisterEventHandler(
             event_handler=launch.event_handlers.OnProcessExit(
