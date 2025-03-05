@@ -77,6 +77,10 @@ void ParticleFilter::motionUpdate() {
     geometry_msgs::msg::TransformStamped odom_tf;
     try {
         odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
+        //print tf trsnlation and rotation to see if its getting
+        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f", odom_tf.transform.translation.x, odom_tf.transform.translation.y, odom_tf.transform.translation.z);
+        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f %f", odom_tf.transform.rotation.x, odom_tf.transform.rotation.y, odom_tf.transform.rotation.z, odom_tf.transform.rotation.w);
+
     } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(this->get_logger(), "Could not get odometry transform: %s", ex.what());
         return;
