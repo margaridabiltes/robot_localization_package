@@ -66,3 +66,4 @@ private:
     // Get expected features for a given particle
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
 };
+#endif

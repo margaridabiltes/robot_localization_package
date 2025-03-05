@@ -22,15 +22,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        webots,
-        my_robot_driver,
-        Node(
-            package="nav2_map_server",
-            executable="map_server",
-            name="map_server",
-            parameters=[{"yaml_filename": os.path.join(package_dir, "resource", "my_map.yaml")}],
-            output="screen"
-        ),
         Node(
             package="nav2_lifecycle_manager",
             executable="lifecycle_manager",
