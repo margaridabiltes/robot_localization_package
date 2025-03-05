@@ -62,6 +62,7 @@ void MyRobotDriver::step() {
   const double *position = wb_supervisor_node_get_position(robot_node);
   const double *orientation = wb_supervisor_node_get_orientation(robot_node);
 
+
   geometry_msgs::msg::TransformStamped tf;
 
   tf2::Matrix3x3 mat(orientation[0], orientation[1], orientation[2],
