@@ -7,7 +7,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(100) 
 
     // Subscriber for observed keypoints (from fake feature extractor)
     keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/transformed_keypoints", 10,
+        "/keypoints", 10,
         std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
     );
 
@@ -26,7 +26,13 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(100) 
         "/estimated_pose", 10
     );
 
+    particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
+        "/particles", 10
+    );
+
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+
+
 }
 
 
@@ -71,6 +77,10 @@ void ParticleFilter::motionUpdate() {
     geometry_msgs::msg::TransformStamped odom_tf;
     try {
         odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
+        //print tf trsnlation and rotation to see if its getting
+        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f", odom_tf.transform.translation.x, odom_tf.transform.translation.y, odom_tf.transform.translation.z);
+        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f %f", odom_tf.transform.rotation.x, odom_tf.transform.rotation.y, odom_tf.transform.rotation.z, odom_tf.transform.rotation.w);
+
     } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(this->get_logger(), "Could not get odometry transform: %s", ex.what());
         return;
@@ -113,6 +123,8 @@ void ParticleFilter::motionUpdate() {
     }
 
     RCLCPP_INFO(this->get_logger(), "Applied motion update.");
+    publishParticles();
+    
 }
 
 
@@ -204,7 +216,8 @@ void ParticleFilter::resampleParticles() {
 
     RCLCPP_INFO(this->get_logger(), "Resampled particles.");
 
-    publishEstimatedPose();
+    //publishEstimatedPose();
+    
 }
 
 
@@ -261,7 +274,30 @@ void ParticleFilter::publishEstimatedPose() {
     RCLCPP_INFO(this->get_logger(), "Published estimated pose and map->odom transform.");
 }
 
+void ParticleFilter::publishParticles() {
+    if (particles_.empty()) return;
 
+    geometry_msgs::msg::PoseArray particles_msg;
+    particles_msg.header.stamp = this->get_clock()->now();
+    particles_msg.header.frame_id = "map";
+
+    for (const auto &p : particles_) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = p.x;
+        pose.position.y = p.y;
+
+        tf2::Quaternion q;
+        q.setRPY(0, 0, p.theta);
+        pose.orientation.x = q.x();
+        pose.orientation.y = q.y();
+        pose.orientation.z = q.z();
+        pose.orientation.w = q.w();
+
+        particles_msg.poses.push_back(pose);
+    }
+
+    particles_pub_->publish(particles_msg);
+}
 
 
 // Main function
@@ -272,3 +308,4 @@ int main(int argc, char **argv) {
     rclcpp::shutdown();
     return 0;
 }
+
