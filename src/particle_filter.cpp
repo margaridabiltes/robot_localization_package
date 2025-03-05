@@ -1,15 +1,15 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(100) {
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000) {
     // Initialize particles
     initializeParticles();
 
     // Subscriber for observed keypoints (from fake feature extractor)
-    keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/keypoints", 10,
-        std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
-    );
+    //keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    //    "/keypoints", 10,
+    //    std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
+    //);
 
     // Timer to update motion every 100ms (separate from measurements)
     motion_timer_ = this->create_wall_timer(
@@ -60,8 +60,8 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
 
     std::vector<std::pair<double, double>> features_particle;
     for (const auto &f : features_map) {
-        double x = std::cos(p.theta) * f.first - std::sin(p.theta) * f.second + p.x;
-        double y = std::sin(p.theta) * f.first + std::cos(p.theta) * f.second + p.y;
+        double x = std::cos(p.theta) * f.first + std::sin(p.theta) * f.second - p.x;
+        double y = -std::sin(p.theta) * f.first +std::cos(p.theta) * f.second - p.y;
         features_particle.emplace_back(x, y);
     }
     return features_particle;
@@ -76,11 +76,7 @@ void ParticleFilter::motionUpdate() {
     // Get latest odometry transform
     geometry_msgs::msg::TransformStamped odom_tf;
     try {
-        odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
-        //print tf trsnlation and rotation to see if its getting
-        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f", odom_tf.transform.translation.x, odom_tf.transform.translation.y, odom_tf.transform.translation.z);
-        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f %f", odom_tf.transform.rotation.x, odom_tf.transform.rotation.y, odom_tf.transform.rotation.z, odom_tf.transform.rotation.w);
-
+        odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);       
     } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(this->get_logger(), "Could not get odometry transform: %s", ex.what());
         return;
@@ -105,7 +101,7 @@ void ParticleFilter::motionUpdate() {
     // Save for next step
     last_odom_x_ = odom_tf.transform.translation.x;
     last_odom_y_ = odom_tf.transform.translation.y;
-    last_odom_theta_ = delta_theta;
+    last_odom_theta_ = yaw;
 
     // Apply motion to all particles with noise
     std::normal_distribution<double> noise_x(0.0, 0.02);
@@ -147,9 +143,16 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     double sum_weights = 0;
 
     // Update particle weights based on feature matching
+    int i = 0;
     for (auto &p : particles_) {
+        i++;
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
-
+        // print particle id number and its expected features
+        std::cout << "Particle "<< i <<":"<< p.x << " " << p.y << " " << p.theta << std::endl;
+        for (const auto &f : expected_features) {
+            std::cout << f.first << " " << f.second << std::endl;
+        }
+        
         double likelihood = 1.0;
 
         for (const auto &obs : observed_features) {
