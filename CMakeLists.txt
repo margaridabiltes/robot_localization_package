@@ -14,6 +14,7 @@ find_package(pluginlib REQUIRED)
 find_package(webots_ros2_driver REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 ## Fake feature extractor
 include_directories(
@@ -28,6 +29,7 @@ ament_target_dependencies(fake_feature_extractor
   sensor_msgs
   tf2_ros
   tf2_geometry_msgs
+  nav_msgs
 )
 install(TARGETS
   fake_feature_extractor
@@ -58,6 +60,7 @@ ament_target_dependencies(
   pluginlib
   rclcpp
   webots_ros2_driver
+  nav_msgs
 )
 install(TARGETS
   ${PROJECT_NAME}

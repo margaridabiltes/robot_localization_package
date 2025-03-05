@@ -1,16 +1,5 @@
 #include "robot_localization_package/MyRobotDriver.hpp"
 
-#include "rclcpp/rclcpp.hpp"
-#include <cstdio>
-#include <functional>
-#include <webots/motor.h>
-#include <webots/robot.h>
-#include <webots/supervisor.h>
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2/LinearMath/Matrix3x3.h>
-#include "tf2_ros/transform_broadcaster.h"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-
 #define HALF_DISTANCE_BETWEEN_WHEELS 0.045
 #define WHEEL_RADIUS 0.025
 
@@ -42,6 +31,7 @@ void MyRobotDriver::init(
   );
 
   tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node);
+  odom_pub_ = node->create_publisher<nav_msgs::msg::Odometry>("/odom", rclcpp::QoS(10));
 
 }
 
@@ -86,6 +76,24 @@ void MyRobotDriver::step() {
   tf.transform.translation.z = position[2];
 
   tf_broadcaster_->sendTransform(tf);
+
+  nav_msgs::msg::Odometry odom;
+  odom.header.stamp = rclcpp::Clock().now();
+  odom.header.frame_id = "odom";
+  odom.pose.pose.position.x = position[0];
+  odom.pose.pose.position.y = position[1];
+  odom.pose.pose.position.z = position[2];
+  odom.pose.pose.orientation.x = q.x();
+  odom.pose.pose.orientation.y = q.y();
+  odom.pose.pose.orientation.z = q.z();
+  odom.pose.pose.orientation.w = q.w();
+
+  odom.child_frame_id = "base_link";
+  odom.twist.twist.linear.x = 0;
+  odom.twist.twist.linear.y = 0;
+  odom.twist.twist.angular.z = 0;
+
+  odom_pub_->publish(odom);
 }
 } // namespace my_robot_driver
 
