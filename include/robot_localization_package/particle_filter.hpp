@@ -9,6 +9,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp> 
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <vector>
 #include <random>
 
@@ -27,9 +28,10 @@ private:
 
     // ROS2 Publishers & Subscribers
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
 
-    // ✅ TF2 for transformation handling
+    //  TF2 for transformation handling
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -59,8 +61,8 @@ private:
     // Compute and publish the estimated pose
     void publishEstimatedPose();
 
+    void publishParticles();
+
     // Get expected features for a given particle
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
 };
-
-#endif // PARTICLE_FILTER_HPP
