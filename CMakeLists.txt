@@ -20,6 +20,22 @@ find_package(nav_msgs REQUIRED)
 include_directories(
   include
 )
+
+
+add_executable(particle_filter
+  src/particle_filter.cpp
+)
+target_include_directories(particle_filter PRIVATE include)
+ament_target_dependencies(particle_filter
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  tf2_ros
+)
+install(TARGETS
+  particle_filter
+  DESTINATION lib/${PROJECT_NAME}
+)
 add_executable(fake_feature_extractor
   src/fake_feature_extractor.cpp
 )
@@ -76,6 +92,8 @@ install(DIRECTORY
   rviz
   DESTINATION share/${PROJECT_NAME}/
 )
+
+
 ament_export_include_directories(
   include
 )

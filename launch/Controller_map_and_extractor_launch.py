@@ -17,12 +17,20 @@ def generate_launch_description():
             {'robot_description': robot_description_path},
         ]
     )
-
-    webots = WebotsLauncher(
-        world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt')
+    webots= WebotsLauncher(
+        world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt'),
     )
 
     return LaunchDescription([
+        webots,
+        my_robot_driver,
+        Node(
+            package="nav2_map_server",
+            executable="map_server",
+            name="map_server",
+            parameters=[{"yaml_filename": os.path.join(package_dir, "resource", "my_map.yaml")}],
+            output="screen"
+        ),
         Node(
             package="nav2_lifecycle_manager",
             executable="lifecycle_manager",
@@ -58,5 +66,13 @@ def generate_launch_description():
             executable="fake_feature_extractor",
             name="fake_feature_extractor",
             output="screen"
+        ),
+        Node(
+            package="robot_localization_package",
+            executable="particle_filter",
+            name="particle_filter",
+            output="screen"
         )
+
+
     ])
