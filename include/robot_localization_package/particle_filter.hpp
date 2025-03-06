@@ -10,6 +10,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp> 
 #include <geometry_msgs/msg/pose_array.hpp>
+#include <nav_msgs/msg/odometry.hpp>
 #include <vector>
 #include <random>
 
@@ -19,51 +20,46 @@ public:
 
 private:
     struct Particle {
-        double x, y, theta;  // Particle state (position and orientation)
-        double weight;       // Importance weight
+        double x, y, theta;  
+        double weight;      
     };
 
-    int num_particles_; // Number of particles
-    std::vector<Particle> particles_; // Particle set
+    int num_particles_; 
+    std::vector<Particle> particles_;
 
     // ROS2 Publishers & Subscribers
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
 
-    //  TF2 for transformation handling
+
+    
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
     // Motion Tracking (stores last known odometry values)
     double last_odom_x_, last_odom_y_, last_odom_theta_;
+    double last_x_, last_y_, last_theta_;
+
 
     // Random generator for resampling
     std::default_random_engine generator_;
 
-    // Initialize particles randomly
     void initializeParticles();
 
-    // Apply motion model to particles
+    void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
     
-    void motionUpdate();
-    rclcpp::TimerBase::SharedPtr motion_timer_;  
-
-
-    // Update particle weights based on feature matching
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     double sensor_noise_ = 0.3; 
 
-    // Resample particles based on their weights
     void resampleParticles();
 
-    // Compute and publish the estimated pose
     void publishEstimatedPose();
 
     void publishParticles();
 
-    // Get expected features for a given particle
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
 };
 #endif

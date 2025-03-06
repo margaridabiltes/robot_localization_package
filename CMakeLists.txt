@@ -31,6 +31,7 @@ ament_target_dependencies(particle_filter
   geometry_msgs
   sensor_msgs
   tf2_ros
+  nav_msgs
 )
 install(TARGETS
   particle_filter

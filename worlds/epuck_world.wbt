@@ -13,8 +13,8 @@ WorldInfo {
   basicTimeStep 20
 }
 Viewpoint {
-  orientation -0.3259129066293485 0.6045847308938715 0.7268136490617071 1.2809214799066853
-  position -1.1414996241110393 -1.7454001810375013 2.3470488487067285
+  orientation -0.37142443587561713 0.6987047772606199 0.6114372597966753 1.435351285116602
+  position -1.0664482460847018 -1.8520466889465474 5.925436003816625
 }
 TexturedBackground {
 }
@@ -48,8 +48,7 @@ WoodenBox {
   size 0.1 0.1 0.1
 }
 DEF MY_ROBOT Robot {
-  translation 0.0530459 0.00806403 0.001
-  rotation 0 0 1 0
+  translation 0.353046 0.298064 0.001
   children [
     Lidar {
       numberOfLayers 1
@@ -90,8 +89,6 @@ DEF MY_ROBOT Robot {
         boundingObject USE WHEEL
         physics Physics {
         }
-        linearVelocity -3.112368083068358e-15 -4.714241455065526e-15 -1.6804013666191697e-16
-        angularVelocity 3.8740223082971447e-13 -1.4122392203056544e-13 -3.790098960840624e-14
       }
     }
     HingeJoint {
@@ -115,8 +112,6 @@ DEF MY_ROBOT Robot {
         boundingObject USE WHEEL
         physics Physics {
         }
-        linearVelocity -3.845967082360457e-15 3.293531081821469e-16 3.7590518197982937e-17
-        angularVelocity -2.20518148345066e-13 -1.4117147854470512e-13 -3.313630942816584e-14
       }
     }
     Pose {
@@ -192,6 +187,4 @@ DEF MY_ROBOT Robot {
   }
   controller "<extern>"
   supervisor TRUE
-  linearVelocity -5.9493229818290305e-15 -2.720492343457159e-16 6.344997206064293e-15
-  angularVelocity -5.45219438348918e-14 -1.4127186479198387e-13 -2.1985545234795983e-14
 }
