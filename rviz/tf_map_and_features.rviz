@@ -7,7 +7,7 @@ Panels:
         - /Global Options1
         - /Status1
         - /Map1
-        - /Map1/Status1
+        - /Map1/Topic1
         - /PointCloud21
       Splitter Ratio: 0.5
     Tree Height: 707
@@ -28,7 +28,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -60,7 +60,7 @@ Visualization Manager:
       Name: Map
       Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
@@ -80,22 +80,13 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        base_link:
-          Value: true
-        map:
-          Value: true
-        odom:
-          Value: true
       Marker Scale: 1
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: false
       Tree:
-        map:
-          odom:
-            base_link:
-              {}
+        {}
       Update Interval: 0
       Value: true
     - Alpha: 1
