@@ -6,16 +6,16 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     initializeParticles();
 
     // Subscriber for observed keypoints (from fake feature extractor)
-    //keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    //    "/keypoints", 10,
-    //    std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
-    //);
+    keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+        "/keypoints", 10,
+        std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
+    );
 
     // Timer to update motion every 100ms (separate from measurements)
-    motion_timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(100),
-        std::bind(&ParticleFilter::motionUpdate, this)
-    );
+    //motion_timer_ = this->create_wall_timer(
+      //  std::chrono::milliseconds(100),
+     //   std::bind(&ParticleFilter::motionUpdate, this)
+    //);
 
     // Add a TF Buffer and Listener to track odometry
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -153,18 +153,18 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
             std::cout << f.first << " " << f.second << std::endl;
         }
         
-        double likelihood = 1.0;
 
-        for (const auto &obs : observed_features) {
-            double min_dist = 1e9;
+        double likelihood = 1.0;
+        for(const auto &obs : observed_features){
+
+            double weight_sum = 0.0;
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(obs.first - exp.first, obs.second - exp.second);
-                min_dist = std::min(min_dist, dist);
+                weight_sum += std::exp(-dist * dist / (2 * sensor_noise_ * sensor_noise_));
             }
+            likelihood *= weight_sum / expected_features.size();  // Normalize likelihood
 
-            likelihood *= std::exp(-min_dist * min_dist / (2 * sensor_noise_ * sensor_noise_));
         }
-
         p.weight *= likelihood;  
         sum_weights += p.weight;
     }
@@ -174,7 +174,10 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         p.weight /= sum_weights; 
     }
 
+
     resampleParticles();
+
+    publishParticles();
 
 }
 
@@ -199,8 +202,10 @@ void ParticleFilter::resampleParticles() {
         return;
     }
 
-    // Resampling: Use the low variance resampling method
     std::vector<Particle> new_particles;
+    std::uniform_real_distribution<double> random_noise(-0.05, 0.05);
+
+    // ✅ Resampling wheel algorithm
     std::uniform_real_distribution<double> dist(0.0, sum_weights / num_particles_);
     double r = dist(generator_);
     int index = 0;
@@ -208,16 +213,28 @@ void ParticleFilter::resampleParticles() {
 
     for (int i = 0; i < num_particles_; i++) {
         double target = r + i * step;
-        while (index < num_particles_ - 1 && cumulative_weights[index] < target) {
+
+        // ✅ Ensure index remains within bounds
+        while (index < static_cast<int>(cumulative_weights.size()) - 1 && cumulative_weights[index] < target) {
             index++;
         }
-        new_particles.push_back(particles_[index]);
+
+        index = std::min(index, static_cast<int>(particles_.size()) - 1);  // ✅ Prevent out-of-bounds access
+
+        Particle sampled = particles_[index];  // ✅ Now `index` is properly assigned
+
+        // ✅ Add some noise to prevent premature collapse
+        sampled.x += random_noise(generator_);
+        sampled.y += random_noise(generator_);
+        sampled.theta += random_noise(generator_);
+
+        new_particles.push_back(sampled);
     }
 
-    // Replace old particles with resampled particles
     particles_ = new_particles;
 
     RCLCPP_INFO(this->get_logger(), "Resampled particles.");
+
 
     //publishEstimatedPose();
     
