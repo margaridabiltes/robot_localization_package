@@ -40,7 +40,6 @@ private:
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
     // Motion Tracking (stores last known odometry values)
-    double last_odom_x_, last_odom_y_, last_odom_theta_;
     double last_x_, last_y_, last_theta_;
 
 
