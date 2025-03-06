@@ -53,7 +53,7 @@ private:
 
     // Update particle weights based on feature matching
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    double sensor_noise_ = 0.1; 
+    double sensor_noise_ = 0.3; 
 
     // Resample particles based on their weights
     void resampleParticles();

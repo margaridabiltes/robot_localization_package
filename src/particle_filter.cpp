@@ -1,7 +1,7 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(100) {
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000) {
     // Initialize particles
     initializeParticles();
 
@@ -12,10 +12,10 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(100) 
     );
 
     // Timer to update motion every 100ms (separate from measurements)
-    motion_timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(100),
-        std::bind(&ParticleFilter::motionUpdate, this)
-    );
+    //motion_timer_ = this->create_wall_timer(
+      //  std::chrono::milliseconds(100),
+     //   std::bind(&ParticleFilter::motionUpdate, this)
+    //);
 
     // Add a TF Buffer and Listener to track odometry
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -60,8 +60,8 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
 
     std::vector<std::pair<double, double>> features_particle;
     for (const auto &f : features_map) {
-        double x = std::cos(p.theta) * f.first - std::sin(p.theta) * f.second + p.x;
-        double y = std::sin(p.theta) * f.first + std::cos(p.theta) * f.second + p.y;
+        double x = std::cos(p.theta) * f.first + std::sin(p.theta) * f.second - p.x;
+        double y = -std::sin(p.theta) * f.first +std::cos(p.theta) * f.second - p.y;
         features_particle.emplace_back(x, y);
     }
     return features_particle;
@@ -76,11 +76,7 @@ void ParticleFilter::motionUpdate() {
     // Get latest odometry transform
     geometry_msgs::msg::TransformStamped odom_tf;
     try {
-        odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
-        //print tf trsnlation and rotation to see if its getting
-        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f", odom_tf.transform.translation.x, odom_tf.transform.translation.y, odom_tf.transform.translation.z);
-        RCLCPP_INFO(this->get_logger(), "Got odometry transform: %f %f %f %f", odom_tf.transform.rotation.x, odom_tf.transform.rotation.y, odom_tf.transform.rotation.z, odom_tf.transform.rotation.w);
-
+        odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);       
     } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(this->get_logger(), "Could not get odometry transform: %s", ex.what());
         return;
@@ -105,7 +101,7 @@ void ParticleFilter::motionUpdate() {
     // Save for next step
     last_odom_x_ = odom_tf.transform.translation.x;
     last_odom_y_ = odom_tf.transform.translation.y;
-    last_odom_theta_ = delta_theta;
+    last_odom_theta_ = yaw;
 
     // Apply motion to all particles with noise
     std::normal_distribution<double> noise_x(0.0, 0.02);
@@ -147,21 +143,28 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     double sum_weights = 0;
 
     // Update particle weights based on feature matching
+    int i = 0;
     for (auto &p : particles_) {
+        i++;
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
+        // print particle id number and its expected features
+        std::cout << "Particle "<< i <<":"<< p.x << " " << p.y << " " << p.theta << std::endl;
+        for (const auto &f : expected_features) {
+            std::cout << f.first << " " << f.second << std::endl;
+        }
+        
 
         double likelihood = 1.0;
+        for(const auto &obs : observed_features){
 
-        for (const auto &obs : observed_features) {
-            double min_dist = 1e9;
+            double weight_sum = 0.0;
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(obs.first - exp.first, obs.second - exp.second);
-                min_dist = std::min(min_dist, dist);
+                weight_sum += std::exp(-dist * dist / (2 * sensor_noise_ * sensor_noise_));
             }
+            likelihood *= weight_sum / expected_features.size();  // Normalize likelihood
 
-            likelihood *= std::exp(-min_dist * min_dist / (2 * sensor_noise_ * sensor_noise_));
         }
-
         p.weight *= likelihood;  
         sum_weights += p.weight;
     }
@@ -171,7 +174,10 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         p.weight /= sum_weights; 
     }
 
+
     resampleParticles();
+
+    publishParticles();
 
 }
 
@@ -196,8 +202,10 @@ void ParticleFilter::resampleParticles() {
         return;
     }
 
-    // Resampling: Use the low variance resampling method
     std::vector<Particle> new_particles;
+    std::uniform_real_distribution<double> random_noise(-0.05, 0.05);
+
+    // ✅ Resampling wheel algorithm
     std::uniform_real_distribution<double> dist(0.0, sum_weights / num_particles_);
     double r = dist(generator_);
     int index = 0;
@@ -205,16 +213,28 @@ void ParticleFilter::resampleParticles() {
 
     for (int i = 0; i < num_particles_; i++) {
         double target = r + i * step;
-        while (index < num_particles_ - 1 && cumulative_weights[index] < target) {
+
+        // ✅ Ensure index remains within bounds
+        while (index < static_cast<int>(cumulative_weights.size()) - 1 && cumulative_weights[index] < target) {
             index++;
         }
-        new_particles.push_back(particles_[index]);
+
+        index = std::min(index, static_cast<int>(particles_.size()) - 1);  // ✅ Prevent out-of-bounds access
+
+        Particle sampled = particles_[index];  // ✅ Now `index` is properly assigned
+
+        // ✅ Add some noise to prevent premature collapse
+        sampled.x += random_noise(generator_);
+        sampled.y += random_noise(generator_);
+        sampled.theta += random_noise(generator_);
+
+        new_particles.push_back(sampled);
     }
 
-    // Replace old particles with resampled particles
     particles_ = new_particles;
 
     RCLCPP_INFO(this->get_logger(), "Resampled particles.");
+
 
     //publishEstimatedPose();
     
