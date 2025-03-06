@@ -14,7 +14,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.37142443587561713 0.6987047772606199 0.6114372597966753 1.435351285116602
-  position -1.0664482460847018 -1.8520466889465474 5.925436003816625
+  position -3.012977345879068 -4.7705053436207825 12.72670018117277
 }
 TexturedBackground {
 }
@@ -48,7 +48,8 @@ WoodenBox {
   size 0.1 0.1 0.1
 }
 DEF MY_ROBOT Robot {
-  translation 0.353046 0.298064 0.001
+  translation 0.513046 0.488064 0.001
+  rotation 0 0 1 1.5707903061004251
   children [
     Lidar {
       numberOfLayers 1

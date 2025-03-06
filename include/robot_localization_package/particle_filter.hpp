@@ -24,6 +24,9 @@ private:
         double weight;      
     };
 
+    bool first_update_ = true;  
+
+
     int num_particles_; 
     std::vector<Particle> particles_;
 

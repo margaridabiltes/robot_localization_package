@@ -98,6 +98,14 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     tf2::Matrix3x3(q).getRPY(roll, pitch, theta);
 
     publishParticles();
+    if (first_update_) {
+        last_x_ = x;
+        last_y_ = y;
+        last_theta_ = theta;
+        first_update_ = false; 
+        RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn).");
+        return;
+    }
     // Only update motion if the robot has moved
     if (std::hypot(x - last_x_, y - last_y_) > 0.01 || std::abs(theta - last_theta_) > 0.01) {
         
@@ -157,12 +165,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     for (auto &p : particles_) {
         i++;
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
-        // print particle id number and its expected features
-        std::cout << "Particle "<< i <<":"<< p.x << " " << p.y << " " << p.theta << std::endl;
-        for (const auto &f : expected_features) {
-            std::cout << f.first << " " << f.second << std::endl;
-        }
-        
+    
         double likelihood = 1.0;
         for(const auto &obs : observed_features){
 
