@@ -13,8 +13,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(webots_ros2_driver REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(tf2_geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 ## Fake feature extractor
 include_directories(
@@ -32,6 +32,7 @@ ament_target_dependencies(particle_filter
   sensor_msgs
   tf2_ros
   nav_msgs
+  tf2_geometry_msgs
 )
 install(TARGETS
   particle_filter

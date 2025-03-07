@@ -69,35 +69,27 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
     return features_particle;
 }
 
-void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
 
+
+void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
 
-    geometry_msgs::msg::TransformStamped odom_tf;
-    try {
-        odom_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
-    } catch (tf2::TransformException &ex) {
-        RCLCPP_WARN(this->get_logger(), "Could not get odometry transform: %s", ex.what());
-        return;
-    }
+    double x = msg->pose.pose.position.x;
+    double y = msg->pose.pose.position.y;
 
-    // Extract position and orientation
-    double x = odom_tf.transform.translation.x;
-    double y = odom_tf.transform.translation.y;
-    
     tf2::Quaternion q(
-        odom_tf.transform.rotation.x,
-        odom_tf.transform.rotation.y,
-        odom_tf.transform.rotation.z,
-        odom_tf.transform.rotation.w
+        msg->pose.pose.orientation.x,
+        msg->pose.pose.orientation.y,
+        msg->pose.pose.orientation.z,
+        msg->pose.pose.orientation.w
     );
     double roll, pitch, theta;
     tf2::Matrix3x3(q).getRPY(roll, pitch, theta);
 
-    publishParticles();
+    //ignore spawn
     if (first_update_) {
         last_x_ = x;
         last_y_ = y;
@@ -106,39 +98,40 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn).");
         return;
     }
-    // Only update motion if the robot has moved
-    if (std::hypot(x - last_x_, y - last_y_) > 0.01 || std::abs(theta - last_theta_) > 0.01) {
-        
-        // Compute movement change
-        double delta_x = x - last_x_;
-        double delta_y = y - last_y_;
-        double delta_theta = theta - last_theta_;
 
-        // Save new position for next check
-        last_x_ = x;
-        last_y_ = y;
-        last_theta_ = theta;
+    double delta_x = x - last_x_;
+    double delta_y = y - last_y_;
+    double delta_theta = theta - last_theta_;
 
-        std::normal_distribution<double> noise_x(0.0, 0.02);
-        std::normal_distribution<double> noise_y(0.0, 0.02);
-        std::normal_distribution<double> noise_theta(0.0, 0.01);
+    //Save new position for next check
+    last_x_ = x;
+    last_y_ = y;
+    last_theta_ = theta;
 
+    if (std::hypot(delta_x, delta_y) > 0.01 || std::abs(delta_theta) > 0.01) {
         for (auto &p : particles_) {
-            p.x = std::clamp(p.x + delta_x + noise_x(generator_), -0.75, 0.75);
-            p.y = std::clamp(p.y + delta_y + noise_y(generator_), -0.75, 0.75);
+            // Move in the particle's direction
+            double move_x = std::cos(p.theta) * delta_x + std::sin(p.theta) * delta_y;
+            double move_y = -std::sin(p.theta) * delta_x + std::cos(p.theta) * delta_y;
 
-            p.theta += delta_theta + noise_theta(generator_);
 
-            // Keep theta within valid range (-π to π)
+            p.x = std::clamp(p.x + move_x, -0.75, 0.75);
+            p.y = std::clamp(p.y + move_y, -0.75, 0.75);
+            p.theta += delta_theta;
+
+            //  Normalize theta to [-π, π]
             if (p.theta > M_PI) p.theta -= 2 * M_PI;
             if (p.theta < -M_PI) p.theta += 2 * M_PI;
         }
 
         RCLCPP_INFO(this->get_logger(), "Applied motion update.");
-    } else {
-        RCLCPP_INFO(this->get_logger(), "Robot has not moved. Skipping motion update.");
     }
+
+    publishParticles();
 }
+
+
+
 
 
 
