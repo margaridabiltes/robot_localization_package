@@ -48,6 +48,7 @@ private:
   double spawn_x = 0.0;
   double spawn_y = 0.0;
   double spawn_z = 0.0;
+  double spawn_theta = 0.0;
 
   tf2::Quaternion spawn_q;
 

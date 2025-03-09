@@ -47,23 +47,46 @@ void MyRobotDriver::step() {
 
   tf2::Quaternion q;
   mat.getRotation(q);
+  double roll, pitch, theta;
+  tf2::Matrix3x3(q).getRPY(roll, pitch, theta);
 
   if(first_update)
   {
     spawn_x = position[0];
     spawn_y = position[1];
-    spawn_z = position[2];
+    spawn_z = 0;
 
+    spawn_theta = theta;
     spawn_q = q;
 
     first_update = false;
   }
 
-  double relative_x = position[0] - spawn_x;
-  double relative_y = position[1] - spawn_y;
-  double relative_z = position[2] - spawn_z;
+ /*  f = canto -> posicao robo no mapa
+  p = particula -> frame odom no mapa
+
+
+
+
+  double dx = f.first - p.x;  
+  double dy = f.second - p.y;
+
+  double x = std::cos(p.theta) * dx + std::sin(p.theta) * dy;
+  double y = -std::sin(p.theta) * dx + std::cos(p.theta) * dy;
+ */
+
+
+  double dx = position[0] - spawn_x;  
+  double dy = position[1] - spawn_y;
+
+  double relative_x = std::cos(spawn_theta) * dx + std::sin(spawn_theta) * dy;
+  double relative_y = -std::sin(spawn_theta) * dx + std::cos(spawn_theta) * dy;
+  double relative_z = 0;
 
   tf2::Quaternion relative_q = spawn_q.inverse() * q;
+
+  //printf("Relative position: %f %f %f\n", relative_x, relative_y, relative_z);
+  //printf("Relative orientation: %f %f %f\n", roll, pitch, theta);
 
   geometry_msgs::msg::TransformStamped tf;
   tf.header.stamp = rclcpp::Clock().now();
