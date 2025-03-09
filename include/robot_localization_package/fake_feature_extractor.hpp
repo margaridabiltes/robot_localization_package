@@ -28,6 +28,8 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
     
     void publishTransformedKeypoints(const geometry_msgs::msg::TransformStamped& transform);
+    
+    bool first_update_ = true;  
 };
 
 #endif // KEYPOINT_DETECTOR_HPP

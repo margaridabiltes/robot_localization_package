@@ -4,14 +4,15 @@
 ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000) {
     initializeParticles();
 
-    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 10,
-        std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
-    );
-    
+      
     keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/keypoints", 10, 
         std::bind(&ParticleFilter::storeKeypointMessage, this, std::placeholders::_1)  
+    );
+
+    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/odom", 10,
+        std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
     );
 
     // Add a Publisher for estimated pose
@@ -107,7 +108,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_theta = odom_theta - last_theta_;
     double delta_distance = std::hypot(delta_x, delta_y);
 
-    if (delta_distance > 0.01 || std::abs(delta_theta) > 0.01) {
+    if (delta_distance > 0.01 || std::abs(delta_theta) > 0.1) {
 
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
@@ -182,8 +183,6 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
 
     resampleParticles();
 
-    //publishParticles();
-
 }
 
 void ParticleFilter::resampleParticles() {
@@ -249,35 +248,49 @@ void ParticleFilter::resampleParticles() {
     RCLCPP_INFO(this->get_logger(), "Resampled particles.");
 
 
-    //publishEstimatedPose();
+    publishEstimatedPose();
     
 }
-
 void ParticleFilter::publishEstimatedPose() {
     if (particles_.empty()) return;
 
-    // Compute weighted average pose
-    double x_sum = 0, y_sum = 0, theta_sum = 0;
-    for (const auto &p : particles_) {
+    // Sort particles by weight (highest first)
+    std::vector<Particle> sorted_particles = particles_;
+    std::sort(sorted_particles.begin(), sorted_particles.end(), 
+        [](const Particle &a, const Particle &b) {
+            return a.weight > b.weight;  // Sort in descending order
+        });
+
+    // Use only the top 10 particles
+    int num_top_particles = std::min(10, static_cast<int>(sorted_particles.size()));
+
+    double x_sum = 0, y_sum = 0, theta_sum = 0, weight_sum = 0;
+
+    for (int i = 0; i < num_top_particles; i++) {
+        const auto &p = sorted_particles[i];
         x_sum += p.x * p.weight;
         y_sum += p.y * p.weight;
         theta_sum += p.theta * p.weight;
+        weight_sum += p.weight;
     }
 
-    double x_est = x_sum;
-    double y_est = y_sum;
-    double theta_est = theta_sum;
+    // Normalize weights
+    if (weight_sum > 0) {
+        x_sum /= weight_sum;
+        y_sum /= weight_sum;
+        theta_sum /= weight_sum;
+    }
 
     // Publish PoseStamped
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.stamp = this->get_clock()->now();
     pose_msg.header.frame_id = "map";
-    pose_msg.pose.position.x = x_est;
-    pose_msg.pose.position.y = y_est;
+    pose_msg.pose.position.x = x_sum;
+    pose_msg.pose.position.y = y_sum;
 
     // Convert yaw to quaternion
     tf2::Quaternion q;
-    q.setRPY(0, 0, theta_est);
+    q.setRPY(0, 0, theta_sum);
     pose_msg.pose.orientation.x = q.x();
     pose_msg.pose.orientation.y = q.y();
     pose_msg.pose.orientation.z = q.z();
@@ -291,8 +304,8 @@ void ParticleFilter::publishEstimatedPose() {
     map_to_odom_tf.header.frame_id = "map";
     map_to_odom_tf.child_frame_id = "odom";
 
-    map_to_odom_tf.transform.translation.x = 0.0;
-    map_to_odom_tf.transform.translation.y = 0.0;
+    map_to_odom_tf.transform.translation.x = x_sum;
+    map_to_odom_tf.transform.translation.y = y_sum;
     map_to_odom_tf.transform.translation.z = 0.0;
 
     map_to_odom_tf.transform.rotation.x = q.x();
@@ -302,7 +315,7 @@ void ParticleFilter::publishEstimatedPose() {
 
     tf_broadcaster_->sendTransform(map_to_odom_tf);
 
-    RCLCPP_INFO(this->get_logger(), "Published estimated pose and map->odom transform.");
+    RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
 
 void ParticleFilter::publishParticles() {
