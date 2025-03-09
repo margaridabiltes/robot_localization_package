@@ -1,13 +1,13 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000) {
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10) {
     initializeParticles();
 
-    keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    /* keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/keypoints", 10,
         std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
-    );
+    ); */
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
@@ -45,6 +45,9 @@ void ParticleFilter::initializeParticles() {
         p.x = dist_x(generator_);
         p.y = dist_y(generator_);
         p.theta = dist_theta(generator_);
+        p.init_x = p.x;
+        p.init_y = p.y;
+        p.init_theta = p.theta;
         p.weight = 1.0 / num_particles_;
     }
 
@@ -69,72 +72,59 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
     return features_particle;
 }
 
-
-
 void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
 
-    double x = msg->pose.pose.position.x;
-    double y = msg->pose.pose.position.y;
+    double odom_x = msg->pose.pose.position.x;
+    double odom_y = msg->pose.pose.position.y;
 
-    tf2::Quaternion q(
+    tf2::Quaternion odom_q(
         msg->pose.pose.orientation.x,
         msg->pose.pose.orientation.y,
         msg->pose.pose.orientation.z,
         msg->pose.pose.orientation.w
     );
-    double roll, pitch, theta;
-    tf2::Matrix3x3(q).getRPY(roll, pitch, theta);
+    double roll, pitch, odom_theta;
+    tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
 
-    //ignore spawn
     if (first_update_) {
-        last_x_ = x;
-        last_y_ = y;
-        last_theta_ = theta;
+        last_x_ = odom_x;
+        last_y_ = odom_y;
+        last_theta_ = odom_theta;
         first_update_ = false; 
         RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn).");
         return;
     }
 
-    double delta_x = x - last_x_;
-    double delta_y = y - last_y_;
-    double delta_theta = theta - last_theta_;
+    double delta_x = odom_x - last_x_;
+    double delta_y = odom_y - last_y_;
+    double delta_theta = odom_theta - last_theta_;
+    double delta_distance = std::hypot(delta_x, delta_y);
 
-    //Save new position for next check
-    last_x_ = x;
-    last_y_ = y;
-    last_theta_ = theta;
 
-    if (std::hypot(delta_x, delta_y) > 0.01 || std::abs(delta_theta) > 0.01) {
+    if (delta_distance > 0.01 || std::abs(delta_theta) > 0.01) {
         for (auto &p : particles_) {
-            // Move in the particle's direction
-            double move_x = std::cos(p.theta) * delta_x + std::sin(p.theta) * delta_y;
-            double move_y = -std::sin(p.theta) * delta_x + std::cos(p.theta) * delta_y;
+            //Save new position for next check
+            last_x_ = odom_x;
+            last_y_ = odom_y;
+            last_theta_ = odom_theta;
 
-
-            p.x = std::clamp(p.x + move_x, -0.75, 0.75);
-            p.y = std::clamp(p.y + move_y, -0.75, 0.75);
-            p.theta += delta_theta;
+            p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta);
+            p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta);
+            p.theta = p.init_theta + odom_theta;
 
             //  Normalize theta to [-π, π]
             if (p.theta > M_PI) p.theta -= 2 * M_PI;
             if (p.theta < -M_PI) p.theta += 2 * M_PI;
         }
-
         RCLCPP_INFO(this->get_logger(), "Applied motion update.");
     }
 
     publishParticles();
 }
-
-
-
-
-
-
 
 void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (particles_.empty()) {
@@ -245,8 +235,6 @@ void ParticleFilter::resampleParticles() {
     
 }
 
-
-
 void ParticleFilter::publishEstimatedPose() {
     if (particles_.empty()) return;
 
@@ -285,8 +273,8 @@ void ParticleFilter::publishEstimatedPose() {
     map_to_odom_tf.header.frame_id = "map";
     map_to_odom_tf.child_frame_id = "odom";
 
-    map_to_odom_tf.transform.translation.x = x_est;
-    map_to_odom_tf.transform.translation.y = y_est;
+    map_to_odom_tf.transform.translation.x = 0.0;
+    map_to_odom_tf.transform.translation.y = 0.0;
     map_to_odom_tf.transform.translation.z = 0.0;
 
     map_to_odom_tf.transform.rotation.x = q.x();

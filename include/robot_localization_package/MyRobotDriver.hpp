@@ -45,6 +45,14 @@ private:
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odom_pub_;
 
+  double spawn_x = 0.0;
+  double spawn_y = 0.0;
+  double spawn_z = 0.0;
+
+  tf2::Quaternion spawn_q;
+
+  bool first_update = true;
+
 };
 } // namespace my_robot_driver
 #endif

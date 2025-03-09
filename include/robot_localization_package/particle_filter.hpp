@@ -21,7 +21,8 @@ public:
 
 private:
     struct Particle {
-        double x, y, theta;  
+        double x, y, theta; 
+        double init_x, init_y, init_theta;
         double weight;      
     };
 

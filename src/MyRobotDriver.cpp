@@ -36,6 +36,65 @@ void MyRobotDriver::init(
 }
 
 void MyRobotDriver::step() {
+  
+  const double *position = wb_supervisor_node_get_position(robot_node);
+  const double *orientation = wb_supervisor_node_get_orientation(robot_node);
+
+  tf2::Matrix3x3 mat(
+      orientation[0], orientation[1], orientation[2],
+      orientation[3], orientation[4], orientation[5],
+      orientation[6], orientation[7], orientation[8]);
+
+  tf2::Quaternion q;
+  mat.getRotation(q);
+
+  if(first_update)
+  {
+    spawn_x = position[0];
+    spawn_y = position[1];
+    spawn_z = position[2];
+
+    spawn_q = q;
+
+    first_update = false;
+  }
+
+  double relative_x = position[0] - spawn_x;
+  double relative_y = position[1] - spawn_y;
+  double relative_z = position[2] - spawn_z;
+
+  tf2::Quaternion relative_q = spawn_q.inverse() * q;
+
+  geometry_msgs::msg::TransformStamped tf;
+  tf.header.stamp = rclcpp::Clock().now();
+  tf.header.frame_id = "odom";
+  tf.child_frame_id = "base_link";
+  tf.transform.translation.x = relative_x;
+  tf.transform.translation.y = relative_y;
+  tf.transform.translation.z = relative_z;
+  tf.transform.rotation.x = relative_q.x();
+  tf.transform.rotation.y = relative_q.y();
+  tf.transform.rotation.z = relative_q.z();
+  tf.transform.rotation.w = relative_q.w();
+  tf_broadcaster_->sendTransform(tf);
+
+  nav_msgs::msg::Odometry odom;
+  odom.header.stamp = rclcpp::Clock().now();
+  odom.header.frame_id = "odom";
+  odom.child_frame_id = "base_link";
+  odom.pose.pose.position.x = relative_x;
+  odom.pose.pose.position.y = relative_y;
+  odom.pose.pose.position.z = relative_z;
+  odom.pose.pose.orientation.x = relative_q.x();
+  odom.pose.pose.orientation.y = relative_q.y();
+  odom.pose.pose.orientation.z = relative_q.z();
+  odom.pose.pose.orientation.w = relative_q.w();
+  odom.twist.twist.linear.x = 0.0;
+  odom.twist.twist.angular.z = 0.0;
+  odom_pub_->publish(odom);
+
+
+  // # Speed command
   auto forward_speed = cmd_vel_msg.linear.x;
   auto angular_speed = cmd_vel_msg.angular.z;
 
@@ -48,53 +107,8 @@ void MyRobotDriver::step() {
 
   wb_motor_set_velocity(left_motor, command_motor_left);
   wb_motor_set_velocity(right_motor, command_motor_right);
-
-  const double *position = wb_supervisor_node_get_position(robot_node);
-  const double *orientation = wb_supervisor_node_get_orientation(robot_node);
-
-  geometry_msgs::msg::TransformStamped tf;
-
-  tf2::Matrix3x3 mat(orientation[0], orientation[1], orientation[2],
-                     orientation[3], orientation[4], orientation[5],
-                     orientation[6], orientation[7], orientation[8]);
-
-  
-  tf2::Quaternion q;
-  mat.getRotation(q);
-
-  tf.header.stamp = rclcpp::Clock().now();
-  tf.header.frame_id = "odom";
-  tf.child_frame_id = "base_link";
-  tf.transform.rotation.x = q.x();
-  tf.transform.rotation.y = q.y();
-  tf.transform.rotation.z = q.z();
-  tf.transform.rotation.w = q.w();
-
-
-  tf.transform.translation.x = position[0];
-  tf.transform.translation.y = position[1];
-  tf.transform.translation.z = position[2];
-
-  tf_broadcaster_->sendTransform(tf);
-
-  nav_msgs::msg::Odometry odom;
-  odom.header.stamp = rclcpp::Clock().now();
-  odom.header.frame_id = "odom";
-  odom.pose.pose.position.x = position[0];
-  odom.pose.pose.position.y = position[1];
-  odom.pose.pose.position.z = position[2];
-  odom.pose.pose.orientation.x = q.x();
-  odom.pose.pose.orientation.y = q.y();
-  odom.pose.pose.orientation.z = q.z();
-  odom.pose.pose.orientation.w = q.w();
-
-  odom.child_frame_id = "base_link";
-  odom.twist.twist.linear.x = 0;
-  odom.twist.twist.linear.y = 0;
-  odom.twist.twist.angular.z = 0;
-
-  odom_pub_->publish(odom);
 }
+
 } // namespace my_robot_driver
 
 #include "pluginlib/class_list_macros.hpp"
