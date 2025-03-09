@@ -54,6 +54,11 @@ private:
     void initializeParticles();
 
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
+
+    sensor_msgs::msg::PointCloud2::SharedPtr last_keypoint_msg_;  // Store latest keypoint message
+
+    void storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+
     
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     double sensor_noise_ = 0.3; 

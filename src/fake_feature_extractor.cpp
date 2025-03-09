@@ -50,7 +50,7 @@ void KeypointDetector::checkAndPublishKeypoints() {
 void KeypointDetector::publishTransformedKeypoints(const geometry_msgs::msg::TransformStamped& transform) {
     sensor_msgs::msg::PointCloud2 cloud_msg;
     cloud_msg.header.stamp = now();
-    cloud_msg.header.frame_id = "base_link";
+    cloud_msg.header.frame_id = "base_link_real";
     cloud_msg.height = 1;
     cloud_msg.width = keypoints_.size();
     cloud_msg.is_dense = true;
