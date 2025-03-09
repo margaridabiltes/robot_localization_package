@@ -1,17 +1,19 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000){
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000),
+    last_x_(0.0), last_y_(0.0), last_theta_(0.0), first_update_(true),
+    msg_odom_base_link_(nullptr), last_keypoint_msg_(nullptr)
+{
     std::cout << "ParticleFilter Constructor START" << std::endl;  
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
     initializeParticles();
-      
+
     keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/keypoints", 10, 
         std::bind(&ParticleFilter::storeKeypointMessage, this, std::placeholders::_1)  
     );
-    
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
@@ -23,19 +25,15 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000
         std::bind(&ParticleFilter::storeOdomBaseLink, this, std::placeholders::_1) 
     );
 
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-        "/estimated_pose", 10
-    );
-
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
+    particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("/particles", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
-    particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
-        "/particles", 10
-    );
-
     timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
-    
+
+    RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 }
+
 
 void ParticleFilter::storeOdomBaseLink(const nav_msgs::msg::Odometry::SharedPtr msg){
     msg_odom_base_link_ = msg;
@@ -307,17 +305,22 @@ void ParticleFilter::computeEstimatedPose(){
     if (theta_last_final < -M_PI) theta_last_final += 2 * M_PI;
     
 }
-
 void ParticleFilter::publishEstimatedPose() {
-    
-    std::cout << "Publishing Estimated Pose" << std::endl;
     if (particles_.empty()) return;
-    // ### Publish  Estimated Pose
+
+    std::cout << "Publishing Estimated Pose" << std::endl;
+    
+    if (!msg_odom_base_link_) {
+        RCLCPP_WARN(this->get_logger(), "Skipping pose publication: No odometry data available.");
+        return;
+    }
+
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.stamp = this->get_clock()->now();
     pose_msg.header.frame_id = "map";
     pose_msg.pose.position.x = x_last_final;
     pose_msg.pose.position.y = y_last_final;
+
     tf2::Quaternion q;
     q.setRPY(0, 0, theta_last_final);
     pose_msg.pose.orientation.x = q.x();
@@ -332,7 +335,6 @@ void ParticleFilter::publishEstimatedPose() {
     map_to_odom_tf.header.frame_id = "map";
     map_to_odom_tf.child_frame_id = "odom";
 
-    
     double odom_x = msg_odom_base_link_->pose.pose.position.x;
     double odom_y = msg_odom_base_link_->pose.pose.position.y;
 
@@ -343,12 +345,11 @@ void ParticleFilter::publishEstimatedPose() {
         msg_odom_base_link_->pose.pose.orientation.w
     );
 
-    //geometry_msgs::msg::TransformStamped odom_to_base_link_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
+    // Calculate map -> odom transform
     map_to_odom_tf.transform.translation.x = x_last_final - odom_x;
     map_to_odom_tf.transform.translation.y = y_last_final - odom_y;
     map_to_odom_tf.transform.translation.z = 0.0;
 
-    // Rotation correction
     tf2::Quaternion q_map, q_odom, q_correction;
     q_map.setRPY(0, 0, theta_last_final);
     q_odom.setX(odom_base_link_q.x());
@@ -356,17 +357,11 @@ void ParticleFilter::publishEstimatedPose() {
     q_odom.setZ(odom_base_link_q.z());
     q_odom.setW(odom_base_link_q.w());
 
-    // Compute the difference in orientation
-    //q_correction = map->odom
-    //q_odom = odom->bl
-    //q_map = map->bl
-    //q_correction * q_odom = q_map
     q_correction = q_map * q_odom.inverse();
     map_to_odom_tf.transform.rotation.x = q_correction.x();
     map_to_odom_tf.transform.rotation.y = q_correction.y();
     map_to_odom_tf.transform.rotation.z = q_correction.z();
     map_to_odom_tf.transform.rotation.w = q_correction.w();
-
 
     tf_broadcaster_->sendTransform(map_to_odom_tf);
 
