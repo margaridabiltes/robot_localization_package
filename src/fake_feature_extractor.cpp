@@ -7,8 +7,6 @@ KeypointDetector::KeypointDetector()
 
     keypoint_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/keypoints", 10);
 
-    timer_ = create_wall_timer(std::chrono::seconds(1), std::bind(&KeypointDetector::checkAndPublishKeypoints, this));
-
     last_x_ = 0.0;
     last_y_ = 0.0;
     last_theta_ = 0.0;
@@ -17,7 +15,7 @@ KeypointDetector::KeypointDetector()
 void KeypointDetector::checkAndPublishKeypoints() {
     geometry_msgs::msg::TransformStamped transform;
     try {
-        transform = tf_buffer_.lookupTransform("base_link", "odom", tf2::TimePointZero);
+        transform = tf_buffer_.lookupTransform("base_link_real", "map", tf2::TimePointZero);
     } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "Could not get robot transform: %s", ex.what());
         return;

@@ -42,7 +42,8 @@ private:
 
   WbDeviceTag right_motor;
   WbDeviceTag left_motor;
-  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_real;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_relative;
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odom_pub_;
 
   double spawn_x = 0.0;

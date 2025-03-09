@@ -30,7 +30,9 @@ void MyRobotDriver::init(
       }
   );
 
-  tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node);
+  tf_broadcaster_relative = std::make_shared<tf2_ros::TransformBroadcaster>(node);
+  tf_broadcaster_real = std::make_shared<tf2_ros::TransformBroadcaster>(node);
+
   odom_pub_ = node->create_publisher<nav_msgs::msg::Odometry>("/odom", rclcpp::QoS(10));
 
 }
@@ -62,19 +64,6 @@ void MyRobotDriver::step() {
     first_update = false;
   }
 
- /*  f = canto -> posicao robo no mapa
-  p = particula -> frame odom no mapa
-
-
-
-
-  double dx = f.first - p.x;  
-  double dy = f.second - p.y;
-
-  double x = std::cos(p.theta) * dx + std::sin(p.theta) * dy;
-  double y = -std::sin(p.theta) * dx + std::cos(p.theta) * dy;
- */
-
 
   double dx = position[0] - spawn_x;  
   double dy = position[1] - spawn_y;
@@ -88,18 +77,32 @@ void MyRobotDriver::step() {
   //printf("Relative position: %f %f %f\n", relative_x, relative_y, relative_z);
   //printf("Relative orientation: %f %f %f\n", roll, pitch, theta);
 
-  geometry_msgs::msg::TransformStamped tf;
-  tf.header.stamp = rclcpp::Clock().now();
-  tf.header.frame_id = "odom";
-  tf.child_frame_id = "base_link";
-  tf.transform.translation.x = relative_x;
-  tf.transform.translation.y = relative_y;
-  tf.transform.translation.z = relative_z;
-  tf.transform.rotation.x = relative_q.x();
-  tf.transform.rotation.y = relative_q.y();
-  tf.transform.rotation.z = relative_q.z();
-  tf.transform.rotation.w = relative_q.w();
-  tf_broadcaster_->sendTransform(tf);
+  geometry_msgs::msg::TransformStamped tf_real;
+  tf_real.header.stamp = rclcpp::Clock().now();
+  tf_real.header.frame_id = "map";
+  tf_real.child_frame_id = "base_link_real";
+  tf_real.transform.translation.x = position[0];
+  tf_real.transform.translation.y = position[1];
+  tf_real.transform.translation.z = position[2];
+  tf_real.transform.rotation.x = q.x();
+  tf_real.transform.rotation.y = q.y();
+  tf_real.transform.rotation.z = q.z();
+  tf_real.transform.rotation.w = q.w();
+  tf_broadcaster_real->sendTransform(tf_real);
+
+
+  geometry_msgs::msg::TransformStamped tf_relative;
+  tf_relative.header.stamp = rclcpp::Clock().now();
+  tf_relative.header.frame_id = "odom";
+  tf_relative.child_frame_id = "base_link";
+  tf_relative.transform.translation.x = relative_x;
+  tf_relative.transform.translation.y = relative_y;
+  tf_relative.transform.translation.z = relative_z;
+  tf_relative.transform.rotation.x = relative_q.x();
+  tf_relative.transform.rotation.y = relative_q.y();
+  tf_relative.transform.rotation.z = relative_q.z();
+  tf_relative.transform.rotation.w = relative_q.w();
+  tf_broadcaster_relative->sendTransform(tf_relative);
 
   nav_msgs::msg::Odometry odom;
   odom.header.stamp = rclcpp::Clock().now();

@@ -1,13 +1,13 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10) {
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000) {
     initializeParticles();
 
-    /* keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/keypoints", 10,
         std::bind(&ParticleFilter::measurementUpdate, this, std::placeholders::_1)
-    ); */
+    );
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,

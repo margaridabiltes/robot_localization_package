@@ -21,8 +21,6 @@ private:
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_pub_;
 
-    rclcpp::TimerBase::SharedPtr timer_;
-
     double last_x_, last_y_, last_theta_;
 
     void checkAndPublishKeypoints();
