@@ -183,21 +183,8 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         sum_weights += p.weight;
     }
 
-    // Normalize weights
-    for (auto &p : particles_) {
-        p.weight /= sum_weights; 
-    }
-    double effective_sample_size = 0.0;
-    for (const auto &p : particles_) {
-        effective_sample_size += p.weight * p.weight;
-    }
-    effective_sample_size = 1.0 / effective_sample_size;
-    
-    if (effective_sample_size < num_particles_ * 0.5) {  // Only resample if particles collapse
-        resampleParticles();
-    } else {
-        RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
-    }
+    resampleParticles();
+ 
 }
 
 void ParticleFilter::resampleParticles() {
