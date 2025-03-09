@@ -90,8 +90,8 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double roll, pitch, odom_theta;
     tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
 
-    std::normal_distribution<double> noise_x(0.0, 0.02);
-    std::normal_distribution<double> noise_y(0.0, 0.02);
+    std::normal_distribution<double> noise_x(0.0, 0.05);
+    std::normal_distribution<double> noise_y(0.0, 0.05);
     std::normal_distribution<double> noise_theta(0.0, 0.01);
 
     if (first_update_) {
@@ -160,17 +160,16 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         i++;
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
     
-        double likelihood = 1.0;
-        for(const auto &obs : observed_features){
-
-            double weight_sum = 0.0;
+        double likelihood = 0.0;  
+        for (const auto &obs : observed_features) {
+            double min_dist = std::numeric_limits<double>::max();
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(obs.first - exp.first, obs.second - exp.second);
-                weight_sum += std::exp(-dist * dist / (2 * sensor_noise_ * sensor_noise_));
+                min_dist = std::min(min_dist, dist);
             }
-            likelihood *= weight_sum / expected_features.size();  // Normalize likelihood
-
+            likelihood += std::exp(-min_dist / sensor_noise_);  // Add likelihood instead of multiplying
         }
+
         p.weight *= likelihood;  
         sum_weights += p.weight;
     }
@@ -179,9 +178,17 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     for (auto &p : particles_) {
         p.weight /= sum_weights; 
     }
-
-
-    resampleParticles();
+    double effective_sample_size = 0.0;
+    for (const auto &p : particles_) {
+        effective_sample_size += p.weight * p.weight;
+    }
+    effective_sample_size = 1.0 / effective_sample_size;
+    
+    if (effective_sample_size < num_particles_ * 0.5) {  // Only resample if particles collapse
+        resampleParticles();
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
+    }
 
 }
 
@@ -207,9 +214,9 @@ void ParticleFilter::resampleParticles() {
     }
 
     std::vector<Particle> new_particles;
-    std::normal_distribution<double> noise_x(0.0, 0.02);  
-    std::normal_distribution<double> noise_y(0.0, 0.02);
-    std::normal_distribution<double> noise_theta(0.0, 0.005);  
+    std::normal_distribution<double> noise_x(0.0, 0.05);  
+    std::normal_distribution<double> noise_y(0.0, 0.05);
+    std::normal_distribution<double> noise_theta(0.0, 0.01);  
 
 
     // Resampling wheel algorithm

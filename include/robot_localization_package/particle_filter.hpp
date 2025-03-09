@@ -37,14 +37,11 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-
-
     
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
-    // Motion Tracking (stores last known odometry values)
     double last_x_, last_y_, last_theta_;
 
 
@@ -61,7 +58,7 @@ private:
 
     
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    double sensor_noise_ = 0.3; 
+    double sensor_noise_ = 0.5; 
 
     void resampleParticles();
 

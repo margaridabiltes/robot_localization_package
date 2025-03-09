@@ -7,7 +7,7 @@ KeypointDetector::KeypointDetector()
 
     keypoint_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/keypoints", 10);
 
-    timer_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&KeypointDetector::checkAndPublishKeypoints, this));
+    timer_ = create_wall_timer(std::chrono::milliseconds(200), std::bind(&KeypointDetector::checkAndPublishKeypoints, this));
 
     last_x_ = 0.0;
     last_y_ = 0.0;
@@ -76,7 +76,7 @@ void KeypointDetector::publishTransformedKeypoints(const geometry_msgs::msg::Tra
     }
 
     keypoint_pub_->publish(cloud_msg);
-    RCLCPP_INFO(get_logger(), "Published transformed keypoints.");
+    //RCLCPP_INFO(get_logger(), "Published transformed keypoints.");
 }
 
 int main(int argc, char **argv) {
