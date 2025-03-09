@@ -89,6 +89,7 @@ void MyRobotDriver::step() {
   tf_real.transform.rotation.z = q.z();
   tf_real.transform.rotation.w = q.w();
   tf_broadcaster_real->sendTransform(tf_real);
+  //printf("position: %f %f %f\n", position[0], position[1], position[2]);
 
 
   geometry_msgs::msg::TransformStamped tf_relative;

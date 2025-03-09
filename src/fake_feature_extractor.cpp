@@ -7,6 +7,8 @@ KeypointDetector::KeypointDetector()
 
     keypoint_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/keypoints", 10);
 
+    timer_ = create_wall_timer(std::chrono::seconds(1), std::bind(&KeypointDetector::checkAndPublishKeypoints, this));
+
     last_x_ = 0.0;
     last_y_ = 0.0;
     last_theta_ = 0.0;
@@ -24,6 +26,8 @@ void KeypointDetector::checkAndPublishKeypoints() {
     double x = transform.transform.translation.x;
     double y = transform.transform.translation.y;
 
+    printf("Robot position: %f %f\n", x, y);
+
     tf2::Quaternion q(
         transform.transform.rotation.x,
         transform.transform.rotation.y,
@@ -35,6 +39,7 @@ void KeypointDetector::checkAndPublishKeypoints() {
 
     // Check if movement is significant before publishing keypoints
     if (std::hypot(x - last_x_, y - last_y_) > 0.01 || std::abs(theta - last_theta_) > 0.01) {
+        printf("Publishing keypoints\n");
         publishTransformedKeypoints(transform);
         last_x_ = x;
         last_y_ = y;

@@ -25,6 +25,8 @@ private:
 
     void checkAndPublishKeypoints();
 
+    rclcpp::TimerBase::SharedPtr timer_;
+    
     void publishTransformedKeypoints(const geometry_msgs::msg::TransformStamped& transform);
 };
 
