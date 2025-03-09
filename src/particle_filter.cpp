@@ -1,39 +1,49 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000) {
-    initializeParticles();
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000){
+    std::cout << "ParticleFilter Constructor START" << std::endl;  
+    RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
+    initializeParticles();
       
     keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/keypoints", 10, 
         std::bind(&ParticleFilter::storeKeypointMessage, this, std::placeholders::_1)  
     );
+    
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
         std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
     );
 
-    // Add a Publisher for estimated pose
+    odom_sub_2 = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/odom", 10,
+        std::bind(&ParticleFilter::storeOdomBaseLink, this, std::placeholders::_1) 
+    );
+
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
         "/estimated_pose", 10
     );
+
+    tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
     particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
         "/particles", 10
     );
 
-    tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+    timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
+    
+}
 
-
+void ParticleFilter::storeOdomBaseLink(const nav_msgs::msg::Odometry::SharedPtr msg){
+    msg_odom_base_link_ = msg;
 }
 
 void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_keypoint_msg_ = msg;  
 }
-
-
 
 void ParticleFilter::initializeParticles() {
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
@@ -138,6 +148,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
 }
 
 void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+  
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
@@ -167,7 +178,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
                 double dist = std::hypot(obs.first - exp.first, obs.second - exp.second);
                 min_dist = std::min(min_dist, dist);
             }
-            likelihood += std::exp(-min_dist / sensor_noise_);  // Add likelihood instead of multiplying
+            likelihood += std::exp(-min_dist / sensor_noise_); 
         }
 
         p.weight *= likelihood;  
@@ -189,7 +200,6 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     } else {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
     }
-
 }
 
 void ParticleFilter::resampleParticles() {
@@ -255,10 +265,11 @@ void ParticleFilter::resampleParticles() {
     RCLCPP_INFO(this->get_logger(), "Resampled particles.");
 
 
-    publishEstimatedPose();
+    computeEstimatedPose();
     
 }
-void ParticleFilter::publishEstimatedPose() {
+
+void ParticleFilter::computeEstimatedPose(){
     if (particles_.empty()) return;
 
     // Sort particles by weight (highest first)
@@ -288,37 +299,74 @@ void ParticleFilter::publishEstimatedPose() {
         theta_sum /= weight_sum;
     }
 
-    // Publish PoseStamped
+    x_last_final=x_sum;
+    y_last_final=y_sum;
+    theta_last_final=theta_sum;
+
+    if (theta_last_final > M_PI) theta_last_final -= 2 * M_PI;
+    if (theta_last_final < -M_PI) theta_last_final += 2 * M_PI;
+    
+}
+
+void ParticleFilter::publishEstimatedPose() {
+    
+    std::cout << "Publishing Estimated Pose" << std::endl;
+    if (particles_.empty()) return;
+    // ### Publish  Estimated Pose
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.stamp = this->get_clock()->now();
     pose_msg.header.frame_id = "map";
-    pose_msg.pose.position.x = x_sum;
-    pose_msg.pose.position.y = y_sum;
-
-    // Convert yaw to quaternion
+    pose_msg.pose.position.x = x_last_final;
+    pose_msg.pose.position.y = y_last_final;
     tf2::Quaternion q;
-    q.setRPY(0, 0, theta_sum);
+    q.setRPY(0, 0, theta_last_final);
     pose_msg.pose.orientation.x = q.x();
     pose_msg.pose.orientation.y = q.y();
     pose_msg.pose.orientation.z = q.z();
     pose_msg.pose.orientation.w = q.w();
-
     pose_pub_->publish(pose_msg);
 
-    // Publish `map -> odom` transform
+    // Publish `map -> base_link` transform
     geometry_msgs::msg::TransformStamped map_to_odom_tf;
     map_to_odom_tf.header.stamp = this->get_clock()->now();
     map_to_odom_tf.header.frame_id = "map";
     map_to_odom_tf.child_frame_id = "odom";
 
-    map_to_odom_tf.transform.translation.x = x_sum;
-    map_to_odom_tf.transform.translation.y = y_sum;
+    
+    double odom_x = msg_odom_base_link_->pose.pose.position.x;
+    double odom_y = msg_odom_base_link_->pose.pose.position.y;
+
+    tf2::Quaternion odom_base_link_q(
+        msg_odom_base_link_->pose.pose.orientation.x,
+        msg_odom_base_link_->pose.pose.orientation.y,
+        msg_odom_base_link_->pose.pose.orientation.z,
+        msg_odom_base_link_->pose.pose.orientation.w
+    );
+
+    //geometry_msgs::msg::TransformStamped odom_to_base_link_tf = tf_buffer_->lookupTransform("odom", "base_link", tf2::TimePointZero);
+    map_to_odom_tf.transform.translation.x = x_last_final - odom_x;
+    map_to_odom_tf.transform.translation.y = y_last_final - odom_y;
     map_to_odom_tf.transform.translation.z = 0.0;
 
-    map_to_odom_tf.transform.rotation.x = q.x();
-    map_to_odom_tf.transform.rotation.y = q.y();
-    map_to_odom_tf.transform.rotation.z = q.z();
-    map_to_odom_tf.transform.rotation.w = q.w();
+    // Rotation correction
+    tf2::Quaternion q_map, q_odom, q_correction;
+    q_map.setRPY(0, 0, theta_last_final);
+    q_odom.setX(odom_base_link_q.x());
+    q_odom.setY(odom_base_link_q.y());
+    q_odom.setZ(odom_base_link_q.z());
+    q_odom.setW(odom_base_link_q.w());
+
+    // Compute the difference in orientation
+    //q_correction = map->odom
+    //q_odom = odom->bl
+    //q_map = map->bl
+    //q_correction * q_odom = q_map
+    q_correction = q_map * q_odom.inverse();
+    map_to_odom_tf.transform.rotation.x = q_correction.x();
+    map_to_odom_tf.transform.rotation.y = q_correction.y();
+    map_to_odom_tf.transform.rotation.z = q_correction.z();
+    map_to_odom_tf.transform.rotation.w = q_correction.w();
+
 
     tf_broadcaster_->sendTransform(map_to_odom_tf);
 
@@ -354,8 +402,7 @@ void ParticleFilter::publishParticles() {
 // Main function
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<ParticleFilter>();
-    rclcpp::spin(node);
+    rclcpp::spin(std::make_shared<ParticleFilter>());
     rclcpp::shutdown();
     return 0;
 }

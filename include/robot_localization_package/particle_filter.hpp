@@ -31,32 +31,35 @@ private:
 
     int num_particles_; 
     std::vector<Particle> particles_;
+    
 
-    // ROS2 Publishers & Subscribers
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_2;
+
     
-    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
+
     double last_x_, last_y_, last_theta_;
-
-
-    // Random generator for resampling
+    double x_last_final = 0.0;
+    double y_last_final = 0.0;
+    double theta_last_final = 0.0;
+    
     std::default_random_engine generator_;
 
     void initializeParticles();
 
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
 
-    sensor_msgs::msg::PointCloud2::SharedPtr last_keypoint_msg_;  // Store latest keypoint message
+    sensor_msgs::msg::PointCloud2::SharedPtr last_keypoint_msg_; 
+    nav_msgs::msg::Odometry::SharedPtr msg_odom_base_link_;
 
     void storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
 
-    
+    void storeOdomBaseLink(const nav_msgs::msg::Odometry::SharedPtr msg);
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     double sensor_noise_ = 0.5; 
 
@@ -64,6 +67,10 @@ private:
 
     void publishEstimatedPose();
 
+    rclcpp::TimerBase::SharedPtr timer_pose_;
+
+    void computeEstimatedPose();
+    
     void publishParticles();
 
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
