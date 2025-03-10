@@ -1,7 +1,7 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000),
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000),
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_keypoint_msg_(nullptr)
 {
@@ -132,8 +132,8 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_distance = std::hypot(delta_x, delta_y);
 
     for(auto &p : particles_){
-        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_);
-        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
+        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta)  + noise_x(generator_);
+        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) +noise_y(generator_);
         p.theta = p.init_theta + odom_theta + noise_theta(generator_);
 
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
@@ -200,12 +200,16 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         p.weight *= likelihood;  
         sum_weights += p.weight;
     }
+
+    
     
     // Normalize weights
     for (auto &p : particles_) {
         p.weight /= sum_weights; 
     }
+    
 
+/* 
     double effective_sample_size = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
     [](double sum, const Particle &p) { return sum + p.weight * p.weight; });
 
@@ -213,8 +217,9 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         resampleParticles();
     } else {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
-    }
- 
+    } */
+    
+    resampleParticles();
 }
 
 void ParticleFilter::resampleParticles() {
@@ -235,11 +240,7 @@ void ParticleFilter::resampleParticles() {
         initializeParticles();
         return;
     }
-
-    // Normalize weights
-    for (auto &p : particles_) {
-        p.weight /= sum_weights;
-    }
+    
 
     std::vector<Particle> new_particles;
     new_particles.reserve(num_particles_);
@@ -282,20 +283,77 @@ void ParticleFilter::resampleParticles() {
     std::normal_distribution<double> noise_x(0.0, 0.02);
     std::normal_distribution<double> noise_y(0.0, 0.02);
     std::normal_distribution<double> noise_theta(0.0, 0.01);
+    std::normal_distribution<double> noise_weight(0.0, 0.0006);
 
     for (auto &p : new_particles) {
         p.x += noise_x(generator_);
         p.y += noise_y(generator_);
         p.theta += noise_theta(generator_);
+        p.weight += noise_weight(generator_);
+
 
         // Normalize theta to [-π, π]
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
         if (p.theta < -M_PI) p.theta += 2 * M_PI;
     }
+    //std::cout << "Particles after resampling:" << particles_.size() << std::endl;
+    //std::cout << "Particles after resampling:" << new_particles.size() << std::endl;
+    //print size of particles
+    std::sort(new_particles.begin(), new_particles.end(), 
+        [](const Particle &a, const Particle &b) {
+            return a.weight < b.weight;  
+        });
+            // Remove 10% of the particles with the lowest weights
+
+    
+    //take out 10% bad weight particles and add 10% new particles with random values
+    int num_particles_to_remove = static_cast<int>(0.5 * num_particles_);
+    int num_particles_to_add = static_cast<int>(0.5 * num_particles_);
+
+    new_particles.erase(new_particles.end() - num_particles_to_remove, new_particles.end());
+
+    /*for (int i = 0; i < num_particles_to_remove; i++) {
+        //new_particles.pop_back();
+    } */
+    for (int i = 0; i < num_particles_to_add; i++) {
+        new_particles[i].x = std::uniform_real_distribution<double>(-0.75, 0.75)(generator_);
+        new_particles[i].y = std::uniform_real_distribution<double>(-0.75, 0.75)(generator_);
+        new_particles[i].theta = std::uniform_real_distribution<double>(0, 2 * M_PI)(generator_);
+        new_particles[i].weight = 1.0 / num_particles_;
+    }
 
     particles_ = new_particles;
 
+    //print last 100 to see if the numbers are valid
+    for (int i = 0; i < 100; i++) {
+        std::cout << "New Particle: " << new_particles[num_particles_ -1 - i].x << " " << new_particles[num_particles_ -1 - i].y << " " << new_particles[num_particles_ -1 - i].theta << " " << new_particles[i].weight << std::endl;
+    }
+
+    //print last 100 to see if the numbers are valid
+    for (int i = 1; i < 100; i++) {
+        std::cout << "Particle: " << particles_[num_particles_- i].x << " " << particles_[num_particles_- i].y << " " << particles_[num_particles_- i].theta << " " << particles_[i].weight << std::endl;
+    }
+
+    //normalize weights
+    sum_weights = 0.0;
+    for (const auto &p : particles_) {
+        sum_weights += p.weight;
+    }
+
+    for (auto &p : particles_) {
+        p.weight /= sum_weights;
+    }
+    
+    
+    //std::cout << "Particles after measurement update:" << std::endl;
+    //for (const auto &p : new_particles) {
+    //    std::cout << "Particle: " << p.x << " " << p.y << " " << p.theta << " " << p.weight << std::endl;
+    //}
+
     RCLCPP_INFO(this->get_logger(), "Resampled particles using Residual Resampling.");
+    //std::cout << "Particles after resampling:" << particles_.size() << std::endl;
+    //std::cout << "Particles after resampling:" << new_particles.size() << std::endl;
+
     
     //computeEstimatedPose(); 
 }
@@ -341,6 +399,7 @@ void ParticleFilter::computeEstimatedPose(){
 }
 void ParticleFilter::publishEstimatedPose() {
     if (particles_.empty()) return;
+
 
     std::cout << "Publishing Estimated Pose" << std::endl;
     
@@ -404,11 +463,25 @@ void ParticleFilter::publishEstimatedPose() {
 
 void ParticleFilter::publishParticles() {
     if (particles_.empty()) return;
+    /* for (const auto &p : particles_) {
+        if (std::isnan(p.x) || std::isnan(p.y) || std::isnan(p.theta)) {
+            std::cout << "⚠️ WARNING: NaN detected in particles!" << std::endl;
+        }
+    } */
 
+    //std::cout << "Particles in publishParticles:" << particles_.size() << std::endl;
+    //std::cout << "Particles in publishParticles" << std::endl;
+    //for (const auto &p : particles_) {
+    //    std::cout << "Particle: " << p.x << " " << p.y << " " << p.theta << " " << p.weight << std::endl;
+    //}
+
+    
     geometry_msgs::msg::PoseArray particles_msg;
     particles_msg.header.stamp = this->get_clock()->now();
     particles_msg.header.frame_id = "map";
-
+    //size of particles
+    //std::cout << "Particles size:" << particles_.size() << std::endl; 
+    particles_msg.poses.clear();
     for (const auto &p : particles_) {
         geometry_msgs::msg::Pose pose;
         pose.position.x = p.x;
