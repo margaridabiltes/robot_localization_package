@@ -107,8 +107,15 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         last_y_ = odom_y;
         last_theta_ = odom_theta;
         first_update_ = false; 
-        RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn).");
-        return;
+        if (!last_keypoint_msg_) {
+            RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
+            return;
+        }
+        else{
+            //measurementUpdate(last_keypoint_msg_);
+            RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn) but performed measurement update.");
+            return;
+        }
     }
 
     double delta_x = odom_x - last_x_;
@@ -116,28 +123,27 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_theta = odom_theta - last_theta_;
     double delta_distance = std::hypot(delta_x, delta_y);
 
-    if (delta_distance > 0.01 || std::abs(delta_theta) > 0.1) {
+    for(auto &p : particles_){
+        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_);
+        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
+        p.theta = p.init_theta + odom_theta + noise_theta(generator_);
+
+        if (p.theta > M_PI) p.theta -= 2 * M_PI;
+        if (p.theta < -M_PI) p.theta += 2 * M_PI;
+    }
+    //RCLCPP_INFO(this->get_logger(), "Applied motion update.");
+
+
+    if (delta_distance > 0.05 || std::abs(delta_theta) > 0.2) {
 
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
         }
 
-        for (auto &p : particles_) {
-            //Save new position for next check
-            last_x_ = odom_x;
-            last_y_ = odom_y;
-            last_theta_ = odom_theta;
-
-            p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_);
-            p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
-            p.theta = p.init_theta + odom_theta + noise_theta(generator_);
-
-            //  Normalize theta to [-π, π]
-            if (p.theta > M_PI) p.theta -= 2 * M_PI;
-            if (p.theta < -M_PI) p.theta += 2 * M_PI;
-        }
-        RCLCPP_INFO(this->get_logger(), "Applied motion update.");
+        last_x_ = odom_x;
+        last_y_ = odom_y;
+        last_theta_ = odom_theta;
         
         measurementUpdate(last_keypoint_msg_);
     }
