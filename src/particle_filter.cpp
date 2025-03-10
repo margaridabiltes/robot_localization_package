@@ -8,16 +8,9 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000
     std::cout << "ParticleFilter Constructor START" << std::endl;  
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
-    initializeParticles();
-
     keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/keypoints", 10, 
         std::bind(&ParticleFilter::storeKeypointMessage, this, std::placeholders::_1)  
-    );
-
-    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 10,
-        std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
     );
 
     odom_sub_2 = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -25,11 +18,27 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000
         std::bind(&ParticleFilter::storeOdomBaseLink, this, std::placeholders::_1) 
     );
 
+    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/odom", 10,
+        std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
+    );
+
+
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
     particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("/particles", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
-    timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
+    //timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
+
+    // Wait for the first keypoint message before initializing particles
+
+    while (rclcpp::ok() && !last_keypoint_msg_) {
+        RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
+        rclcpp::spin_some(this->get_node_base_interface());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    initializeParticles();
 
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 }
@@ -58,7 +67,6 @@ void ParticleFilter::initializeParticles() {
         p.init_theta = p.theta;
         p.weight = 1.0 / num_particles_;
     }
-
     RCLCPP_INFO(this->get_logger(), "Initialized %d particles across map.", num_particles_);
 }
 
@@ -112,10 +120,10 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
             return;
         }
         else{
-            //measurementUpdate(last_keypoint_msg_);
+            measurementUpdate(last_keypoint_msg_);
             RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn) but performed measurement update.");
-            return;
         }
+        RCLCPP_INFO(this->get_logger(), "Initialized motion update.");
     }
 
     double delta_x = odom_x - last_x_;
@@ -131,10 +139,8 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
         if (p.theta < -M_PI) p.theta += 2 * M_PI;
     }
-    //RCLCPP_INFO(this->get_logger(), "Applied motion update.");
 
-
-    if (delta_distance > 0.05 || std::abs(delta_theta) > 0.2) {
+    if (delta_distance > 0.08 || std::abs(delta_theta) > 0.2) {
 
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
@@ -256,7 +262,7 @@ void ParticleFilter::resampleParticles() {
     RCLCPP_INFO(this->get_logger(), "Resampled particles.");
 
 
-    computeEstimatedPose();
+    //computeEstimatedPose();
     
 }
 
