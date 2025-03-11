@@ -1,5 +1,6 @@
 #include "robot_localization_package/MyRobotDriver.hpp"
 
+#define TIME_STEP 32
 #define HALF_DISTANCE_BETWEEN_WHEELS 0.045
 #define WHEEL_RADIUS 0.025
 
@@ -14,6 +15,11 @@ void MyRobotDriver::init(
 
   right_motor = wb_robot_get_device("right wheel motor");
   left_motor = wb_robot_get_device("left wheel motor");
+
+  right_encoder = wb_robot_get_device("right wheel encoder");
+  left_encoder = wb_robot_get_device("left wheel encoder");
+  wb_position_sensor_enable(right_encoder, TIME_STEP);
+  wb_position_sensor_enable(left_encoder, TIME_STEP);
 
 
   wb_motor_set_position(left_motor, INFINITY);
@@ -35,10 +41,18 @@ void MyRobotDriver::init(
 
   odom_pub_ = node->create_publisher<nav_msgs::msg::Odometry>("/odom", rclcpp::QoS(10));
 
+  est_x = 0.0;
+  est_y = 0.0;
+  est_theta = 0.0;
+
 }
 
 void MyRobotDriver::step() {
   
+  // ######################
+  // REAL POSITION BROADCAST
+  // ######################
+  {
   const double *position = wb_supervisor_node_get_position(robot_node);
   const double *orientation = wb_supervisor_node_get_orientation(robot_node);
 
@@ -90,38 +104,63 @@ void MyRobotDriver::step() {
   tf_real.transform.rotation.w = q.w();
   tf_broadcaster_real->sendTransform(tf_real);
   //printf("position: %f %f %f\n", position[0], position[1], position[2]);
+  }
 
+  //###########################
+  // RELATIVE POSITION BROADCAST
+  //#############################
+  {
+  double left_wheel_position = wb_position_sensor_get_value(left_encoder);
+  double right_wheel_position = wb_position_sensor_get_value(right_encoder);
+
+  double delta_left_wheel = left_wheel_position - last_left_wheel_pos;
+  double delta_right_wheel = right_wheel_position - last_right_wheel_pos;
+
+  double delta_distance = (delta_left_wheel + delta_right_wheel) * WHEEL_RADIUS / 2.0 ;
+  double delta_theta = (delta_right_wheel - delta_left_wheel) / (2 * HALF_DISTANCE_BETWEEN_WHEELS);
+
+  est_x += delta_distance * std::cos(est_theta + delta_theta / 2.0);
+  est_y += delta_distance * std::sin(est_theta + delta_theta / 2.0);
+  est_theta += delta_theta;
+  if(est_theta > M_PI) est_theta -= 2 * M_PI;
+  if(est_theta < -M_PI) est_theta += 2 * M_PI;
+
+  tf2::Quaternion est_q;
+  est_q.setRPY(0, 0, est_theta);
 
   geometry_msgs::msg::TransformStamped tf_relative;
   tf_relative.header.stamp = rclcpp::Clock().now();
   tf_relative.header.frame_id = "odom";
   tf_relative.child_frame_id = "base_link";
-  tf_relative.transform.translation.x = relative_x;
-  tf_relative.transform.translation.y = relative_y;
-  tf_relative.transform.translation.z = relative_z;
-  tf_relative.transform.rotation.x = relative_q.x();
-  tf_relative.transform.rotation.y = relative_q.y();
-  tf_relative.transform.rotation.z = relative_q.z();
-  tf_relative.transform.rotation.w = relative_q.w();
+  tf_relative.transform.translation.x = est_x;
+  tf_relative.transform.translation.y = est_y;
+  tf_relative.transform.translation.z = 0.0;
+  tf_relative.transform.rotation.x = est_q.x();
+  tf_relative.transform.rotation.y = est_q.y();
+  tf_relative.transform.rotation.z = est_q.z();
+  tf_relative.transform.rotation.w = est_q.w();
   tf_broadcaster_relative->sendTransform(tf_relative);
 
   nav_msgs::msg::Odometry odom;
   odom.header.stamp = rclcpp::Clock().now();
   odom.header.frame_id = "odom";
   odom.child_frame_id = "base_link";
-  odom.pose.pose.position.x = relative_x;
-  odom.pose.pose.position.y = relative_y;
-  odom.pose.pose.position.z = relative_z;
-  odom.pose.pose.orientation.x = relative_q.x();
-  odom.pose.pose.orientation.y = relative_q.y();
-  odom.pose.pose.orientation.z = relative_q.z();
-  odom.pose.pose.orientation.w = relative_q.w();
+  odom.pose.pose.position.x = est_x;
+  odom.pose.pose.position.y = est_y;
+  odom.pose.pose.position.z = 0.0;
+  odom.pose.pose.orientation.x = est_q.x();
+  odom.pose.pose.orientation.y = est_q.y();
+  odom.pose.pose.orientation.z = est_q.z();
+  odom.pose.pose.orientation.w = est_q.w();
   odom.twist.twist.linear.x = 0.0;
   odom.twist.twist.angular.z = 0.0;
   odom_pub_->publish(odom);
+  }
 
-
-  // # Speed command
+  //###########################
+  // SPEED CONTROL
+  //#############################
+  {
   auto forward_speed = cmd_vel_msg.linear.x;
   auto angular_speed = cmd_vel_msg.angular.z;
 
@@ -134,6 +173,8 @@ void MyRobotDriver::step() {
 
   wb_motor_set_velocity(left_motor, command_motor_left);
   wb_motor_set_velocity(right_motor, command_motor_right);
+  }
+
 }
 
 } // namespace my_robot_driver

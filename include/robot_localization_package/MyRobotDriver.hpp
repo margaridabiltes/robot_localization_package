@@ -6,6 +6,7 @@
 #include <webots/supervisor.h>
 #include <webots/robot.h>
 #include <webots/motor.h>
+#include <webots/position_sensor.h>
 #include "webots_ros2_driver/PluginInterface.hpp"
 #include "webots_ros2_driver/WebotsNode.hpp"
 
@@ -40,8 +41,11 @@ private:
       
   geometry_msgs::msg::Twist cmd_vel_msg;
 
+  
   WbDeviceTag right_motor;
   WbDeviceTag left_motor;
+  WbDeviceTag right_encoder;
+  WbDeviceTag left_encoder;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_real;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_relative;
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odom_pub_;
@@ -54,6 +58,13 @@ private:
   tf2::Quaternion spawn_q;
 
   bool first_update = true;
+
+  double est_x = 0.0;
+  double est_y = 0.0;
+  double est_theta = 0.0;
+  double last_left_wheel_pos = 0.0;
+  double last_right_wheel_pos = 0.0;
+
 
 };
 } // namespace my_robot_driver

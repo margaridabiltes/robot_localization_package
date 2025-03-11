@@ -64,10 +64,13 @@ DEF MY_ROBOT Robot {
         RotationalMotor {
           name "left wheel motor"
         }
+        PositionSensor{
+          name "left wheel encoder"
+        }
       ]
       endPoint Solid {
         translation 0 0.045 0.025
-        rotation 0 1 0 1.7881393432617193e-07
+        rotation 0 1 0 0
         children [
           DEF WHEEL Pose {
             rotation 1 0 0 1.5707996938995747
@@ -94,7 +97,7 @@ DEF MY_ROBOT Robot {
     }
     HingeJoint {
       jointParameters HingeJointParameters {
-        position 1.784189541783309e-07
+        position 0
         axis 0 1 0
         anchor 0 0 0.025
       }
@@ -102,10 +105,13 @@ DEF MY_ROBOT Robot {
         RotationalMotor {
           name "right wheel motor"
         }
+        PositionSensor {
+        name "right wheel encoder"
+        }  
       ]
       endPoint Solid {
-        translation 0 -0.04499999999999999 0.025
-        rotation 0 1 0 1.7881393432617193e-07
+        translation 0 -0.045 0.025
+        rotation 0 1 0 0
         children [
           USE WHEEL
         ]
