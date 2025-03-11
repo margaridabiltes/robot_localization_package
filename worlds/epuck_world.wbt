@@ -106,7 +106,8 @@ DEF MY_ROBOT Robot {
           name "right wheel motor"
         }
         PositionSensor {
-        name "right wheel encoder"
+          name "right wheel encoder"
+
         }  
       ]
       endPoint Solid {

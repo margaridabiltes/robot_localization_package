@@ -22,9 +22,28 @@ def generate_launch_description():
         world=os.path.join(package_dir, 'worlds', 'epuck_world.wbt')
     )
 
+    rviz = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        arguments=["-d", os.path.join(package_dir, "rviz", "tf.rviz")],
+        output="screen"
+    )
+
+    teleop = Node(
+        package="teleop_twist_keyboard",
+        executable="teleop_twist_keyboard",
+        name="teleop_twist_keyboard",
+        output="screen",
+        prefix="gnome-terminal --",
+    )
+
+
     return LaunchDescription([
+        rviz,
         webots,
         my_robot_driver,
+        teleop,
         launch.actions.RegisterEventHandler(
             event_handler=launch.event_handlers.OnProcessExit(
                 target_action=webots,

@@ -62,6 +62,8 @@ private:
   double est_x = 0.0;
   double est_y = 0.0;
   double est_theta = 0.0;
+  double left_wheel_position = 0.0;
+  double right_wheel_position = 0.0;
   double last_left_wheel_pos = 0.0;
   double last_right_wheel_pos = 0.0;
 
