@@ -62,6 +62,14 @@ def generate_launch_description():
             output="screen"
     )
 
+    teleop = Node(
+        package="teleop_twist_keyboard",
+        executable="teleop_twist_keyboard",
+        name="teleop_twist_keyboard",
+        output="screen",
+        prefix="gnome-terminal --",
+    )
+
 
     return LaunchDescription([
         rviz,
@@ -70,5 +78,6 @@ def generate_launch_description():
         fake_feature_extractor,
         tf_static,
         map_server,
-        lifecycle_manager
+        lifecycle_manager,
+        teleop
     ])

@@ -57,6 +57,15 @@ def generate_launch_description():
         arguments=["-d", os.path.join(package_dir, "rviz", "tf_and_map.rviz")],
         output="screen"
     )
+    
+    teleop = Node(
+        package="teleop_twist_keyboard",
+        executable="teleop_twist_keyboard",
+        name="teleop_twist_keyboard",
+        output="screen",
+        prefix="gnome-terminal --",
+    )
+
 
     return LaunchDescription([
         rviz,
@@ -64,5 +73,6 @@ def generate_launch_description():
         my_robot_driver,
         tf_static,
         map_server,
-        lifecycle_manager
+        lifecycle_manager,
+        teleop
     ])
