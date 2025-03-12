@@ -111,7 +111,7 @@ void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::S
 
 std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
     std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75}, {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}
+        {-0.75, 0.75} , {0.75, 0.75}/*, {0.75, -0.75}, {-0.75, -0.75} */
     };
 
     std::vector<std::pair<double, double>> features_particle;
@@ -134,6 +134,27 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
     }
 
     return features_particle;
+}
+
+void ParticleFilter::cleanOutliers(){
+
+    
+
+}
+
+double ParticleFilter::getOutlierPercentage(){
+    int num_outliers=0;
+    for(auto &p : particles_){
+        if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
+            num_outliers++;
+        }
+    }
+    if(num_outliers == 0){
+        return 0;
+    }
+    else{
+        return (num_outliers/num_particles_);
+    }
 }
 
 //! auxiliar functions end!//
@@ -259,10 +280,10 @@ void ParticleFilter::initializeParticles() {
         p.x = dist_x(generator_);
         p.y = dist_y(generator_);
         p.theta = dist_theta(generator_);
+        p.weight = 1.0 / num_particles_;
         p.init_x = p.x;
         p.init_y = p.y;
         p.init_theta = p.theta;
-        p.weight = 1.0 / num_particles_;
     }
     RCLCPP_INFO(this->get_logger(), "Initialized %d particles across map.", num_particles_);
 }
@@ -297,15 +318,16 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_distance = std::hypot(delta_x, delta_y);
 
     for(auto &p : particles_){
-        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_);
-        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
-        p.theta = p.init_theta + odom_theta + noise_theta(generator_);
+        p.x =  p.init_x + odom_x* std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_)  ;
+        p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
+        p.theta = p.init_theta+  odom_theta  + noise_theta(generator_) ;
+
 
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
         if (p.theta < -M_PI) p.theta += 2 * M_PI;
     }
 
-    if (delta_distance > 0.08 || std::abs(delta_theta) > 0.2) {
+    if (delta_distance > 0.1 || std::abs(delta_theta) > 0.2) {
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
@@ -349,8 +371,8 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
             double min_dist = std::numeric_limits<double>::max();
             
             // Apply noise to the measurement
-            double noisy_x = obs.first + measurement_noise(generator_);
-            double noisy_y = obs.second + measurement_noise(generator_);
+            double noisy_x = obs.first   + measurement_noise(generator_)  ;
+            double noisy_y = obs.second   + measurement_noise(generator_)  ;
     
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(noisy_x - exp.first, noisy_y - exp.second);
@@ -366,7 +388,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
 
     normalizeWeights();
     
-    resampleParticles(ResamplingMethod::MULTINOMIAL);
+    resampleParticles(ResamplingMethod::STRATIFIED);
     replaceWorstParticles();
 }
 
@@ -384,14 +406,14 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
     } 
-
+/* 
     //add noise to particle weight in %to the hightest weight
     double max_weight = maxWeight();
     std::normal_distribution<double> noise_w(0.0, 0.2*max_weight);
     for(auto &p : particles_){
         p.weight +=  noise_w(generator_);
     }
-
+ */
     switch (method) {
         case ResamplingMethod::MULTINOMIAL:
             multinomialResample();

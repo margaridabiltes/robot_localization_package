@@ -17,8 +17,8 @@
 #include <vector>
 #include <random>
 
-#define noise_x_ 0.05
-#define noise_y_ 0.05
+#define noise_x_ 0.02
+#define noise_y_ 0.02
 #define noise_theta_ 0.02
 
 
@@ -52,7 +52,6 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_2;
 
     
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -76,7 +75,7 @@ private:
 
     void storeOdomBaseLink(const nav_msgs::msg::Odometry::SharedPtr msg);
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    double sensor_noise_ = 0.6; 
+    double sensor_noise_ = 0.5; 
 
     void resampleParticles(ResamplingMethod method);
 
@@ -99,6 +98,10 @@ private:
     double maxWeight();
 
     void replaceWorstParticles();
+
+    void cleanOutliers();
+
+    double getOutlierPercentage();
 
 };
 #endif
