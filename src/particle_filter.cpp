@@ -36,6 +36,8 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 }
 
+//! auxiliar functions start!//
+
 void ParticleFilter::normalizeWeights(){
     double sum_weights = 0;
     for (auto &p : particles_) {
@@ -54,6 +56,89 @@ double ParticleFilter::maxWeight(){
     }
     return max_weight;
 }
+
+void ParticleFilter::publishParticles() {
+    if (particles_.empty()) return;
+    
+    geometry_msgs::msg::PoseArray particles_msg;
+    particles_msg.header.stamp = this->get_clock()->now();
+    particles_msg.header.frame_id = "map";
+
+    particles_msg.poses.clear();
+    for (const auto &p : particles_) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = p.x;
+        pose.position.y = p.y;
+
+        tf2::Quaternion q;
+        q.setRPY(0, 0, p.theta);
+        pose.orientation.x = q.x();
+        pose.orientation.y = q.y();
+        pose.orientation.z = q.z();
+        pose.orientation.w = q.w();
+
+        particles_msg.poses.push_back(pose);
+    }
+
+    particles_pub_->publish(particles_msg);
+}
+
+void ParticleFilter::replaceWorstParticles() {
+    std::sort(particles_.begin(), particles_.end(), 
+              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
+
+    int num_replace = num_particles_ * 0.1;
+
+    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_theta(0, 2 * M_PI);
+
+    for (int i = 0; i < num_replace; i++) {
+        particles_[i].x = dist_x(generator_);
+        particles_[i].y = dist_y(generator_);
+        particles_[i].theta = dist_theta(generator_);
+        particles_[i].weight = 1.0 / num_particles_; 
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Replaced %d worst particles with random ones.", num_replace);
+
+    normalizeWeights();
+}
+
+void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    last_keypoint_msg_ = msg;  
+}
+
+std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
+    std::vector<std::pair<double, double>> features_map = {
+        {-0.75, 0.75}, {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}
+    };
+
+    std::vector<std::pair<double, double>> features_particle;
+
+    tf2::Transform transform;
+    transform.setOrigin(tf2::Vector3(p.x, p.y, 0.0));
+    tf2::Quaternion q;
+    q.setRPY(0, 0, p.theta);
+    transform.setRotation(q);
+
+    tf2::Transform inverse_transform = transform.inverse();
+
+    for (const auto &f : features_map) {
+        tf2::Vector3 point_map(f.first, f.second, 0.0);
+
+        // Transform the point to the particle's frame
+        tf2::Vector3 point_particle = inverse_transform * point_map;
+
+        features_particle.emplace_back(point_particle.x(), point_particle.y());
+    }
+
+    return features_particle;
+}
+
+//! auxiliar functions end!//
+
+//! Resampling functions start !//
 
 void ParticleFilter::multinomialResample() {
     std::vector<Particle> new_particles;
@@ -77,7 +162,6 @@ void ParticleFilter::multinomialResample() {
     particles_ = new_particles;
 
 }
-
 
 void ParticleFilter::stratifiedResample() {
     std::vector<Particle> new_particles;
@@ -163,10 +247,7 @@ void ParticleFilter::residualResample() {
     particles_ = new_particles;
 }
 
-
-void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-    last_keypoint_msg_ = msg;  
-}
+//! Resampling functions end !//
 
 void ParticleFilter::initializeParticles() {
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
@@ -184,37 +265,6 @@ void ParticleFilter::initializeParticles() {
         p.weight = 1.0 / num_particles_;
     }
     RCLCPP_INFO(this->get_logger(), "Initialized %d particles across map.", num_particles_);
-}
-
-
-std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
-    std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75}, {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}
-    };
-
-    std::vector<std::pair<double, double>> features_particle;
-
-    // Create a transform from the particle's pose
-    tf2::Transform transform;
-    transform.setOrigin(tf2::Vector3(p.x, p.y, 0.0));
-    tf2::Quaternion q;
-    q.setRPY(0, 0, p.theta);
-    transform.setRotation(q);
-
-    // Invert the transform to convert from map -> particle frame
-    tf2::Transform inverse_transform = transform.inverse();
-
-    for (const auto &f : features_map) {
-        // Create a point in the map frame
-        tf2::Vector3 point_map(f.first, f.second, 0.0);
-
-        // Transform the point to the particle's frame
-        tf2::Vector3 point_particle = inverse_transform * point_map;
-
-        features_particle.emplace_back(point_particle.x(), point_particle.y());
-    }
-
-    return features_particle;
 }
 
 void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
@@ -247,8 +297,8 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_distance = std::hypot(delta_x, delta_y);
 
     for(auto &p : particles_){
-        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta)  + noise_x(generator_);
-        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) +noise_y(generator_);
+        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_);
+        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
         p.theta = p.init_theta + odom_theta + noise_theta(generator_);
 
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
@@ -270,7 +320,6 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
 
     publishParticles();
 }
-
 
 void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
   
@@ -308,7 +357,6 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
                 min_dist = std::min(min_dist, dist);
             }
             
-            // Apply Gaussian likelihood function
             likelihood += std::exp(- (min_dist * min_dist) / (2 * sensor_noise_ * sensor_noise_));  
         }
     
@@ -321,6 +369,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     resampleParticles(ResamplingMethod::MULTINOMIAL);
     replaceWorstParticles();
 }
+
 void ParticleFilter::resampleParticles(ResamplingMethod method) {
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to resample.");
@@ -334,7 +383,7 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
     if (ess > num_particles_ * 0.5) {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
-    }
+    } 
 
     //add noise to particle weight in %to the hightest weight
     double max_weight = maxWeight();
@@ -361,12 +410,9 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
     normalizeWeights();
 }
 
-
-
 void ParticleFilter::computeEstimatedPose(){
     if (particles_.empty()) return;
 
-    // Sort particles by weight (highest first)
     std::vector<Particle> sorted_particles = particles_;
     std::sort(sorted_particles.begin(), sorted_particles.end(), 
         [](const Particle &a, const Particle &b) {
@@ -401,6 +447,7 @@ void ParticleFilter::computeEstimatedPose(){
     if (theta_last_final < -M_PI) theta_last_final += 2 * M_PI;
     
 }
+
 void ParticleFilter::publishEstimatedPose() {
     if (particles_.empty()) return;
 
@@ -464,56 +511,7 @@ void ParticleFilter::publishEstimatedPose() {
 
     RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
-void ParticleFilter::publishParticles() {
-    if (particles_.empty()) return;
-    
-    geometry_msgs::msg::PoseArray particles_msg;
-    particles_msg.header.stamp = this->get_clock()->now();
-    particles_msg.header.frame_id = "map";
 
-    particles_msg.poses.clear();
-    for (const auto &p : particles_) {
-        geometry_msgs::msg::Pose pose;
-        pose.position.x = p.x;
-        pose.position.y = p.y;
-
-        tf2::Quaternion q;
-        q.setRPY(0, 0, p.theta);
-        pose.orientation.x = q.x();
-        pose.orientation.y = q.y();
-        pose.orientation.z = q.z();
-        pose.orientation.w = q.w();
-
-        particles_msg.poses.push_back(pose);
-    }
-
-    particles_pub_->publish(particles_msg);
-}
-
-void ParticleFilter::replaceWorstParticles() {
-    std::sort(particles_.begin(), particles_.end(), 
-              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
-
-    int num_replace = num_particles_ * 0.1;
-
-    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_theta(0, 2 * M_PI);
-
-    for (int i = 0; i < num_replace; i++) {
-        particles_[i].x = dist_x(generator_);
-        particles_[i].y = dist_y(generator_);
-        particles_[i].theta = dist_theta(generator_);
-        particles_[i].weight = 1.0 / num_particles_; 
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Replaced %d worst particles with random ones.", num_replace);
-
-    normalizeWeights();
-}
-
-
-// Main function
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<ParticleFilter>());

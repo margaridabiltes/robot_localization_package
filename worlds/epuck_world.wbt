@@ -48,7 +48,7 @@ WoodenBox {
   size 0.1 0.1 0.1
 }
 DEF MY_ROBOT Robot {
-  translation 0.513046 0.488064 0.001
+  translation 0 0 0.004
   rotation 0 0 1 1.5707903061004251
   children [
     Lidar {
