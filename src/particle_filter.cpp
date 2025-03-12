@@ -36,6 +36,134 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 }
 
+void ParticleFilter::normalizeWeights(){
+    double sum_weights = 0;
+    for (auto &p : particles_) {
+        sum_weights += p.weight;
+    }
+
+    for (auto &p : particles_) {
+        p.weight /= sum_weights;
+    }
+}
+
+double ParticleFilter::maxWeight(){
+    double max_weight = 0.0;
+    for (const auto &p : particles_) {
+        max_weight = std::max(max_weight, p.weight);
+    }
+    return max_weight;
+}
+
+void ParticleFilter::multinomialResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    // Compute cumulative weights
+    std::vector<double> cumulative_weights(num_particles_);
+    cumulative_weights[0] = particles_[0].weight;
+    for (size_t i = 1; i < num_particles_; i++) {
+        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, cumulative_weights.back());
+    for (size_t i = 0; i < num_particles_; i++) {
+        double r = dist(generator_);
+        auto it = std::lower_bound(cumulative_weights.begin(), cumulative_weights.end(), r);
+        int index = std::distance(cumulative_weights.begin(), it);
+        new_particles.push_back(particles_[index]);
+    }
+
+    particles_ = new_particles;
+
+}
+
+
+void ParticleFilter::stratifiedResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    // Compute cumulative weights
+    std::vector<double> cumulative_weights(num_particles_);
+    cumulative_weights[0] = particles_[0].weight;
+    for (size_t i = 1; i < num_particles_; i++) {
+        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
+    double r = dist(generator_);
+
+    int index = 0;
+    for (size_t i = 0; i < num_particles_; i++) {
+        double U = r + (i / static_cast<double>(num_particles_));
+        while (U > cumulative_weights[index]) index++;
+        new_particles.push_back(particles_[index]);
+    }
+
+    particles_ = new_particles;
+}
+
+void ParticleFilter::systematicResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    // Compute cumulative weights
+    std::vector<double> cumulative_weights(num_particles_);
+    cumulative_weights[0] = particles_[0].weight;
+    for (size_t i = 1; i < num_particles_; i++) {
+        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
+    double r = dist(generator_);
+
+    int index = 0;
+    for (size_t i = 0; i < num_particles_; i++) {
+        double U = r + (i / static_cast<double>(num_particles_));
+        while (U > cumulative_weights[index]) index++;
+        new_particles.push_back(particles_[index]);
+    }
+
+    particles_ = new_particles;
+}
+
+void ParticleFilter::residualResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    std::vector<double> residual_weights;
+    int total_copies = 0;
+
+    for (const auto &p : particles_) {
+        int num_copies = static_cast<int>(p.weight * num_particles_);
+        total_copies += num_copies;
+        for (int j = 0; j < num_copies; j++) new_particles.push_back(p);
+        residual_weights.push_back((p.weight * num_particles_) - num_copies);
+    }
+
+    std::vector<double> cumulative_weights;
+    double sum_residuals = 0.0;
+    for (double rw : residual_weights) {
+        sum_residuals += rw;
+        cumulative_weights.push_back(sum_residuals);
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, sum_residuals);
+    while (total_copies < num_particles_) {
+        double r = dist(generator_);
+        for (size_t i = 0; i < cumulative_weights.size(); i++) {
+            if (r <= cumulative_weights[i]) {
+                new_particles.push_back(particles_[i]);
+                total_copies++;
+                break;
+            }
+        }
+    }
+
+    particles_ = new_particles;
+}
+
+
 void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_keypoint_msg_ = msg;  
 }
@@ -128,7 +256,6 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     }
 
     if (delta_distance > 0.08 || std::abs(delta_theta) > 0.2) {
-        std::cout << "going to measurement" << std::endl;
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
@@ -189,15 +316,12 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         sum_weights += p.weight;
     }
 
-    // Normalize weights
-    for (auto &p : particles_) {
-        p.weight /= sum_weights; 
-    }
+    normalizeWeights();
     
-    resampleParticles();
+    resampleParticles(ResamplingMethod::MULTINOMIAL);
+    replaceWorstParticles();
 }
-
-void ParticleFilter::resampleParticles() {
+void ParticleFilter::resampleParticles(ResamplingMethod method) {
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to resample.");
         return;
@@ -207,94 +331,35 @@ void ParticleFilter::resampleParticles() {
     double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
         [](double sum, const Particle &p) { return sum + p.weight * p.weight; });
 
-    if (ess > num_particles_ * 0.7) { // Only resample when necessary
+    if (ess > num_particles_ * 0.5) {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
     }
 
-    // Compute total weight
-    double sum_weights = 0.0;
-    for (const auto &p : particles_) sum_weights += p.weight;
-
-    if (sum_weights == 0.0) {
-        RCLCPP_WARN(this->get_logger(), "All particle weights are zero. Reinitializing particles.");
-        initializeParticles();
-        return;
+    //add noise to particle weight in %to the hightest weight
+    double max_weight = maxWeight();
+    std::normal_distribution<double> noise_w(0.0, 0.2*max_weight);
+    for(auto &p : particles_){
+        p.weight +=  noise_w(generator_);
     }
 
-    std::vector<Particle> new_particles;
-    new_particles.reserve(num_particles_);
-
-    // Residual Resampling (Deterministic + Stochastic)
-    std::vector<double> residual_weights;
-    int total_copies = 0;
-
-    for (const auto &p : particles_) {
-        int num_copies = static_cast<int>(p.weight * num_particles_);
-        total_copies += num_copies;
-        for (int j = 0; j < num_copies; j++) new_particles.push_back(p);
-        residual_weights.push_back((p.weight * num_particles_) - num_copies);
+    switch (method) {
+        case ResamplingMethod::MULTINOMIAL:
+            multinomialResample();
+            break;
+        case ResamplingMethod::STRATIFIED:
+            stratifiedResample();
+            break;
+        case ResamplingMethod::SYSTEMATIC:
+            systematicResample();
+            break;
+        case ResamplingMethod::RESIDUAL:
+            residualResample();
+            break;
     }
 
-    // Stochastic selection for remaining particles
-    std::vector<double> cumulative_weights;
-    double sum_residuals = 0.0;
-    for (double rw : residual_weights) {
-        sum_residuals += rw;
-        cumulative_weights.push_back(sum_residuals);
-    }
-
-    std::uniform_real_distribution<double> dist(0.0, sum_residuals);
-    while (total_copies < num_particles_) {
-        double r = dist(generator_);
-        for (size_t i = 0; i < cumulative_weights.size(); i++) {
-            if (r <= cumulative_weights[i]) {
-                new_particles.push_back(particles_[i]);
-                total_copies++;
-                break;
-            }
-        }
-    }
-
-    // 🔹 **Metropolis-Hastings Step for Diversity**
-    std::normal_distribution<double> noise_x(0.0, 0.02);
-    std::normal_distribution<double> noise_y(0.0, 0.02);
-    std::normal_distribution<double> noise_theta(0.0, 0.01);
-
-    for (auto &p : new_particles) {
-        Particle proposal = p;  // Copy original particle
-        proposal.x += noise_x(generator_);
-        proposal.y += noise_y(generator_);
-        proposal.theta += noise_theta(generator_);
-
-        if (proposal.theta > M_PI) proposal.theta -= 2 * M_PI;
-        if (proposal.theta < -M_PI) proposal.theta += 2 * M_PI;
-
-        // Compute acceptance probability
-        double w_old = p.weight;
-        double w_new = std::exp(-std::hypot(proposal.x - p.x, proposal.y - p.y) / 0.1);  // 0.1 is tuning parameter
-
-        double alpha = std::min(1.0, w_new / w_old);
-        std::uniform_real_distribution<double> accept_dist(0.0, 1.0);
-
-        // Accept or reject new sample
-        if (accept_dist(generator_) < alpha) {
-            p = proposal;  // Accept new sample
-        }
-    }
-
-    particles_ = new_particles;
-
-    // Normalize weights
-    double new_weight_sum = std::accumulate(particles_.begin(), particles_.end(), 0.0,
-        [](double sum, const Particle &p) { return sum + p.weight; });
-    for (auto &p : particles_) {
-        p.weight /= new_weight_sum;
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Resampled using ESS + Metropolis-Hastings.");
+    normalizeWeights();
 }
-
 
 
 
@@ -399,7 +464,6 @@ void ParticleFilter::publishEstimatedPose() {
 
     RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
-
 void ParticleFilter::publishParticles() {
     if (particles_.empty()) return;
     
@@ -426,6 +490,28 @@ void ParticleFilter::publishParticles() {
     particles_pub_->publish(particles_msg);
 }
 
+void ParticleFilter::replaceWorstParticles() {
+    std::sort(particles_.begin(), particles_.end(), 
+              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
+
+    int num_replace = num_particles_ * 0.1;
+
+    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_theta(0, 2 * M_PI);
+
+    for (int i = 0; i < num_replace; i++) {
+        particles_[i].x = dist_x(generator_);
+        particles_[i].y = dist_y(generator_);
+        particles_[i].theta = dist_theta(generator_);
+        particles_[i].weight = 1.0 / num_particles_; 
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Replaced %d worst particles with random ones.", num_replace);
+
+    normalizeWeights();
+}
+
 
 // Main function
 int main(int argc, char **argv) {
@@ -434,4 +520,3 @@ int main(int argc, char **argv) {
     rclcpp::shutdown();
     return 0;
 }
-

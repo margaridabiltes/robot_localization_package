@@ -33,6 +33,14 @@ private:
         double weight;      
     };
 
+    enum class ResamplingMethod {
+        MULTINOMIAL,
+        STRATIFIED,
+        SYSTEMATIC,
+        RESIDUAL
+    };
+    
+
     bool first_update_ = true;  
 
 
@@ -68,9 +76,9 @@ private:
 
     void storeOdomBaseLink(const nav_msgs::msg::Odometry::SharedPtr msg);
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    double sensor_noise_ = 0.5; 
+    double sensor_noise_ = 0.6; 
 
-    void resampleParticles();
+    void resampleParticles(ResamplingMethod method);
 
     void publishEstimatedPose();
 
@@ -81,5 +89,16 @@ private:
     void publishParticles();
 
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
+
+    void multinomialResample();
+    void stratifiedResample();
+    void systematicResample();
+    void residualResample();
+
+    void normalizeWeights();
+    double maxWeight();
+
+    void replaceWorstParticles();
+
 };
 #endif
