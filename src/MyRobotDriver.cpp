@@ -7,12 +7,17 @@
 
 namespace my_robot_driver {
 
+bool checkMapOverlap(double x, double y){
+  return false;
+}
+
 WbNodeRef robot_node = wb_supervisor_node_get_from_def("MY_ROBOT");
 
 void MyRobotDriver::init(
     webots_ros2_driver::WebotsNode *node,
-    std::unordered_map<std::string, std::string> &parameters) {
+    std::unordered_map<std::string, std::string> &parameters) {  
 
+  
   right_motor = wb_robot_get_device("right wheel motor");
   left_motor = wb_robot_get_device("left wheel motor");
 
@@ -57,34 +62,76 @@ void MyRobotDriver::init(
 }
 
 void MyRobotDriver::step() {
+
+  #pragma region InitializePosition
   
-  //* ######################
-  //* REAL POSITION BROADCAST
-  //* ######################
+  double random_x = 0.0;
+  double random_y = 0.0;
+  double random_theta = 0.0;
+  bool randomSpawn = true;
+  if(first_update)
+  {
+    if(randomSpawn)
+    {  
+      unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+      generator_.seed(seed);
+      std::uniform_real_distribution<double> xy_dist(-0.65, 0.65);
+      std::uniform_real_distribution<double> theta_dist(-M_PI, M_PI);
+      
+      bool overlap = true;
+      while(overlap)
+      {
+        random_x = xy_dist(generator_);
+        random_y = xy_dist(generator_);
+        random_x = xy_dist(generator_);
+        random_y = xy_dist(generator_);
+        overlap = checkMapOverlap(random_x, random_y);
+      }
+
+      
+    }
+    std::cout << "Initializing position: x " <<  random_x <<" y: " << random_y<< std::endl;
+    double init_position[3] = {random_x, random_y, 0.0};
+    double init_orientation[4] = {0.0, 0.0, 1.0, random_theta};
+
+    wb_supervisor_field_set_sf_vec3f(wb_supervisor_node_get_field(robot_node, "translation"), init_position);
+    wb_supervisor_field_set_sf_rotation(wb_supervisor_node_get_field(robot_node, "rotation"), init_orientation);
+    spawn_x = init_position[0];
+    spawn_y = init_position[1];
+    spawn_z = 0;
+
+    const double *orientation_aux = wb_supervisor_node_get_orientation(robot_node);
+
+    tf2::Matrix3x3 mat(
+      orientation_aux[0], orientation_aux[1], orientation_aux[2],
+      orientation_aux[3], orientation_aux[4], orientation_aux[5],
+      orientation_aux[6], orientation_aux[7], orientation_aux[8]);
+
+    tf2::Quaternion q;
+    mat.getRotation(q);
+    double roll, pitch, theta;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, theta);
+
+
+    spawn_theta = theta;
+    spawn_q = q;
+  }
+  #pragma endregion InitializePosition
+
+  #pragma region RealPositionBroadcast
   const double *position = wb_supervisor_node_get_position(robot_node);
   const double *orientation = wb_supervisor_node_get_orientation(robot_node);
 
   tf2::Matrix3x3 mat(
-      orientation[0], orientation[1], orientation[2],
-      orientation[3], orientation[4], orientation[5],
-      orientation[6], orientation[7], orientation[8]);
+    orientation[0], orientation[1], orientation[2],
+    orientation[3], orientation[4], orientation[5],
+    orientation[6], orientation[7], orientation[8]);
 
   tf2::Quaternion q;
   mat.getRotation(q);
   double roll, pitch, theta;
   tf2::Matrix3x3(q).getRPY(roll, pitch, theta);
-
-  if(first_update)
-  {
-    spawn_x = position[0];
-    spawn_y = position[1];
-    spawn_z = 0;
-
-    spawn_theta = theta;
-    spawn_q = q;
-  }
-
-
+  
   double dx = position[0] - spawn_x;  
   double dy = position[1] - spawn_y;
 
@@ -110,10 +157,9 @@ void MyRobotDriver::step() {
   tf_real.transform.rotation.w = q.w();
   tf_broadcaster_real->sendTransform(tf_real);
   //printf("position: %f %f %f\n", position[0], position[1], position[2]);
+  #pragma endregion PositionBroadcast
 
-  //* ###########################
-  //* RELATIVE POSITION BROADCAST
-  //* #############################
+  #pragma region EstimatedPositionBroadcast
   
   left_wheel_position = wb_position_sensor_get_value(left_encoder);
   right_wheel_position = wb_position_sensor_get_value(right_encoder);
@@ -174,10 +220,10 @@ void MyRobotDriver::step() {
   odom.twist.twist.linear.x = 0.0;
   odom.twist.twist.angular.z = 0.0;
   odom_pub_->publish(odom);
+  #pragma endregion EstimatedPositionBroadcast
 
-  //* ###########################
-  //*  SPEED CONTROL
-  //* #############################
+  #pragma region SpeedControl
+
   auto forward_speed = cmd_vel_msg.linear.x;
   auto angular_speed = cmd_vel_msg.angular.z;
 
@@ -190,6 +236,8 @@ void MyRobotDriver::step() {
 
   wb_motor_set_velocity(left_motor, command_motor_left);
   wb_motor_set_velocity(right_motor, command_motor_right);
+
+  #pragma endregion SpeedControl
 
 }
 

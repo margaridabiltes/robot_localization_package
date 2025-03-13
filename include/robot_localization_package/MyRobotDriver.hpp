@@ -25,10 +25,14 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include "tf2_ros/transform_broadcaster.h"
 
+#include <random>
+#include <chrono>
 
 
 
 namespace my_robot_driver {
+
+bool checkMapOverlap(double x, double y);
 class MyRobotDriver : public webots_ros2_driver::PluginInterface {
 public:
   void step() override;
@@ -42,6 +46,7 @@ private:
       
   geometry_msgs::msg::Twist cmd_vel_msg;
 
+  std::default_random_engine generator_;
   
   WbDeviceTag right_motor;
   WbDeviceTag left_motor;
