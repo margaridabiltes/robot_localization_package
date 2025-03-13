@@ -15,6 +15,7 @@ find_package(webots_ros2_driver REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2)
 
 ## Fake feature extractor
 include_directories(
@@ -33,6 +34,7 @@ ament_target_dependencies(particle_filter
   tf2_ros
   nav_msgs
   tf2_geometry_msgs
+  tf2
 )
 install(TARGETS
   particle_filter
@@ -61,6 +63,7 @@ install(
 ## MyRobotDriver 
 # Export the plugin configuration file
 pluginlib_export_plugin_description_file(webots_ros2_driver my_robot_driver.xml)
+
 
 # MyRobotDriver library
 add_library(

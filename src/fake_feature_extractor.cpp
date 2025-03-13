@@ -7,7 +7,7 @@ KeypointDetector::KeypointDetector()
 
     keypoint_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/keypoints", 10);
 
-    timer_ = create_wall_timer(std::chrono::milliseconds(200), std::bind(&KeypointDetector::checkAndPublishKeypoints, this));
+    timer_ = create_wall_timer(std::chrono::milliseconds(100), std::bind(&KeypointDetector::checkAndPublishKeypoints, this));
 }
 
 void KeypointDetector::checkAndPublishKeypoints() {

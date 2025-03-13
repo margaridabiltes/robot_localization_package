@@ -13,11 +13,6 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
         std::bind(&ParticleFilter::storeKeypointMessage, this, std::placeholders::_1)  
     );
 
-    odom_sub_2 = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 10,
-        std::bind(&ParticleFilter::storeOdomBaseLink, this, std::placeholders::_1) 
-    );
-
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
         std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
@@ -30,8 +25,6 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
     //timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
 
-    // Wait for the first keypoint message before initializing particles
-
     while (rclcpp::ok() && !last_keypoint_msg_) {
         RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
         rclcpp::spin_some(this->get_node_base_interface());
@@ -43,14 +36,239 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 }
 
+//! auxiliar functions start!//
 
-void ParticleFilter::storeOdomBaseLink(const nav_msgs::msg::Odometry::SharedPtr msg){
-    msg_odom_base_link_ = msg;
+void ParticleFilter::normalizeWeights(){
+    double sum_weights = 0;
+    for (auto &p : particles_) {
+        sum_weights += p.weight;
+    }
+
+    for (auto &p : particles_) {
+        p.weight /= sum_weights;
+    }
+}
+
+double ParticleFilter::maxWeight(){
+    double max_weight = 0.0;
+    for (const auto &p : particles_) {
+        max_weight = std::max(max_weight, p.weight);
+    }
+    return max_weight;
+}
+
+void ParticleFilter::publishParticles() {
+    if (particles_.empty()) return;
+    
+    geometry_msgs::msg::PoseArray particles_msg;
+    particles_msg.header.stamp = this->get_clock()->now();
+    particles_msg.header.frame_id = "map";
+
+    particles_msg.poses.clear();
+    for (const auto &p : particles_) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = p.x;
+        pose.position.y = p.y;
+
+        tf2::Quaternion q;
+        q.setRPY(0, 0, p.theta);
+        pose.orientation.x = q.x();
+        pose.orientation.y = q.y();
+        pose.orientation.z = q.z();
+        pose.orientation.w = q.w();
+
+        particles_msg.poses.push_back(pose);
+    }
+
+    particles_pub_->publish(particles_msg);
+}
+
+void ParticleFilter::replaceWorstParticles() {
+    std::sort(particles_.begin(), particles_.end(), 
+              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
+
+    int num_replace = num_particles_ * 0.1;
+
+    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_theta(0, 2 * M_PI);
+
+    for (int i = 0; i < num_replace; i++) {
+        particles_[i].x = dist_x(generator_);
+        particles_[i].y = dist_y(generator_);
+        particles_[i].theta = dist_theta(generator_);
+        particles_[i].weight = 1.0 / num_particles_; 
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Replaced %d worst particles with random ones.", num_replace);
+
+    normalizeWeights();
 }
 
 void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_keypoint_msg_ = msg;  
 }
+
+std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
+    std::vector<std::pair<double, double>> features_map = {
+        {-0.75, 0.75} , {0.75, 0.75}/*, {0.75, -0.75}, {-0.75, -0.75} */
+    };
+
+    std::vector<std::pair<double, double>> features_particle;
+
+    tf2::Transform transform;
+    transform.setOrigin(tf2::Vector3(p.x, p.y, 0.0));
+    tf2::Quaternion q;
+    q.setRPY(0, 0, p.theta);
+    transform.setRotation(q);
+
+    tf2::Transform inverse_transform = transform.inverse();
+
+    for (const auto &f : features_map) {
+        tf2::Vector3 point_map(f.first, f.second, 0.0);
+
+        // Transform the point to the particle's frame
+        tf2::Vector3 point_particle = inverse_transform * point_map;
+
+        features_particle.emplace_back(point_particle.x(), point_particle.y());
+    }
+
+    return features_particle;
+}
+
+void ParticleFilter::cleanOutliers(){
+
+    
+
+}
+
+double ParticleFilter::getOutlierPercentage(){
+    int num_outliers=0;
+    for(auto &p : particles_){
+        if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
+            num_outliers++;
+        }
+    }
+    if(num_outliers == 0){
+        return 0;
+    }
+    else{
+        return (num_outliers/num_particles_);
+    }
+}
+
+//! auxiliar functions end!//
+
+//! Resampling functions start !//
+
+void ParticleFilter::multinomialResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    // Compute cumulative weights
+    std::vector<double> cumulative_weights(num_particles_);
+    cumulative_weights[0] = particles_[0].weight;
+    for (size_t i = 1; i < num_particles_; i++) {
+        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, cumulative_weights.back());
+    for (size_t i = 0; i < num_particles_; i++) {
+        double r = dist(generator_);
+        auto it = std::lower_bound(cumulative_weights.begin(), cumulative_weights.end(), r);
+        int index = std::distance(cumulative_weights.begin(), it);
+        new_particles.push_back(particles_[index]);
+    }
+
+    particles_ = new_particles;
+
+}
+
+void ParticleFilter::stratifiedResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    // Compute cumulative weights
+    std::vector<double> cumulative_weights(num_particles_);
+    cumulative_weights[0] = particles_[0].weight;
+    for (size_t i = 1; i < num_particles_; i++) {
+        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
+    double r = dist(generator_);
+
+    int index = 0;
+    for (size_t i = 0; i < num_particles_; i++) {
+        double U = r + (i / static_cast<double>(num_particles_));
+        while (U > cumulative_weights[index]) index++;
+        new_particles.push_back(particles_[index]);
+    }
+
+    particles_ = new_particles;
+}
+
+void ParticleFilter::systematicResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    // Compute cumulative weights
+    std::vector<double> cumulative_weights(num_particles_);
+    cumulative_weights[0] = particles_[0].weight;
+    for (size_t i = 1; i < num_particles_; i++) {
+        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
+    double r = dist(generator_);
+
+    int index = 0;
+    for (size_t i = 0; i < num_particles_; i++) {
+        double U = r + (i / static_cast<double>(num_particles_));
+        while (U > cumulative_weights[index]) index++;
+        new_particles.push_back(particles_[index]);
+    }
+
+    particles_ = new_particles;
+}
+
+void ParticleFilter::residualResample() {
+    std::vector<Particle> new_particles;
+    new_particles.reserve(num_particles_);
+
+    std::vector<double> residual_weights;
+    int total_copies = 0;
+
+    for (const auto &p : particles_) {
+        int num_copies = static_cast<int>(p.weight * num_particles_);
+        total_copies += num_copies;
+        for (int j = 0; j < num_copies; j++) new_particles.push_back(p);
+        residual_weights.push_back((p.weight * num_particles_) - num_copies);
+    }
+
+    std::vector<double> cumulative_weights;
+    double sum_residuals = 0.0;
+    for (double rw : residual_weights) {
+        sum_residuals += rw;
+        cumulative_weights.push_back(sum_residuals);
+    }
+
+    std::uniform_real_distribution<double> dist(0.0, sum_residuals);
+    while (total_copies < num_particles_) {
+        double r = dist(generator_);
+        for (size_t i = 0; i < cumulative_weights.size(); i++) {
+            if (r <= cumulative_weights[i]) {
+                new_particles.push_back(particles_[i]);
+                total_copies++;
+                break;
+            }
+        }
+    }
+
+    particles_ = new_particles;
+}
+
+//! Resampling functions end !//
 
 void ParticleFilter::initializeParticles() {
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
@@ -62,30 +280,12 @@ void ParticleFilter::initializeParticles() {
         p.x = dist_x(generator_);
         p.y = dist_y(generator_);
         p.theta = dist_theta(generator_);
+        p.weight = 1.0 / num_particles_;
         p.init_x = p.x;
         p.init_y = p.y;
         p.init_theta = p.theta;
-        p.weight = 1.0 / num_particles_;
     }
     RCLCPP_INFO(this->get_logger(), "Initialized %d particles across map.", num_particles_);
-}
-
-std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
-    std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75}/* , {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75} */
-    };
-
-    std::vector<std::pair<double, double>> features_particle;
-    for (const auto &f : features_map) {
-        double dx = f.first - p.x;  
-        double dy = f.second - p.y;
-
-        double x = std::cos(p.theta) * dx + std::sin(p.theta) * dy;
-        double y = -std::sin(p.theta) * dx + std::cos(p.theta) * dy;
-
-        features_particle.emplace_back(x, y);
-    }
-    return features_particle;
 }
 
 void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
@@ -93,6 +293,8 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
+
+    msg_odom_base_link_ = msg;
 
     double odom_x = msg->pose.pose.position.x;
     double odom_y = msg->pose.pose.position.y;
@@ -106,7 +308,10 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double roll, pitch, odom_theta;
     tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
 
-    
+    std::normal_distribution<double> noise_x(0.0, noise_x_);
+    std::normal_distribution<double> noise_y(0.0, noise_y_);
+    std::normal_distribution<double> noise_theta(0.0, noise_theta_);
+
     double delta_x = odom_x - last_x_;
     double delta_y = odom_y - last_y_;
     double delta_theta = odom_theta - last_theta_;
@@ -117,16 +322,16 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     std::normal_distribution<double> noise_theta(0.0, 0.01);
 
     for(auto &p : particles_){
-        p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta)  + noise_x(generator_);
-        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
-        p.theta = p.init_theta + odom_theta + noise_theta(generator_);
+        p.x =  p.init_x + odom_x* std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_)  ;
+        p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
+        p.theta = p.init_theta+  odom_theta  + noise_theta(generator_) ;
+
 
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
         if (p.theta < -M_PI) p.theta += 2 * M_PI;
     }
 
-    if (delta_distance > 0.08 || std::abs(delta_theta) > 0.2) {
-
+    if (delta_distance > 0.1 || std::abs(delta_theta) > 0.2) {
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
@@ -159,7 +364,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     }
 
     double sum_weights = 0;
-    std::normal_distribution<double> measurement_noise(0.0, sensor_noise_ * 0.1); // 10% of sensor noise
+    std::normal_distribution<double> measurement_noise(0.0, sensor_noise_ * 0.1); 
 
     // Update particle weights based on feature matching
     for (auto &p : particles_) {
@@ -170,15 +375,14 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
             double min_dist = std::numeric_limits<double>::max();
             
             // Apply noise to the measurement
-            double noisy_x = obs.first + measurement_noise(generator_);
-            double noisy_y = obs.second + measurement_noise(generator_);
+            double noisy_x = obs.first   + measurement_noise(generator_)  ;
+            double noisy_y = obs.second   + measurement_noise(generator_)  ;
     
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(noisy_x - exp.first, noisy_y - exp.second);
                 min_dist = std::min(min_dist, dist);
             }
             
-            // Apply Gaussian likelihood function
             likelihood += std::exp(- (min_dist * min_dist) / (2 * sensor_noise_ * sensor_noise_));  
         }
     
@@ -186,175 +390,55 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         sum_weights += p.weight;
     }
 
-    double avg_weight = sum_weights / num_particles_;
-    // Communist weight distribution
-    for (auto &p : particles_) {
-        if(p.weight > 2 * avg_weight){
-            p.weight = 2 * avg_weight;
-        }
-    }
+    normalizeWeights();
     
-    
-    // Normalize weights
-    for (auto &p : particles_) {
-        p.weight /= sum_weights; 
-    }
-    
-
-/* 
-    double effective_sample_size = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
-    [](double sum, const Particle &p) { return sum + p.weight * p.weight; });
-
-    if (effective_sample_size < num_particles_ * 0.5) {  // Resample only when necessary
-        resampleParticles();
-    } else {
-        RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
-    } */
-    
-    resampleParticles();
+    resampleParticles(ResamplingMethod::STRATIFIED);
+    replaceWorstParticles();
 }
 
-void ParticleFilter::resampleParticles() {
+void ParticleFilter::resampleParticles(ResamplingMethod method) {
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to resample.");
         return;
     }
 
-    // Compute total weight
-    double sum_weights = 0.0;
-    for (const auto &p : particles_) {
-        sum_weights += p.weight;
-    }
+    // Compute Effective Sample Size (ESS)
+    double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
+        [](double sum, const Particle &p) { return sum + p.weight * p.weight; });
 
-    // Check for zero weights (edge case)
-    if (sum_weights == 0.0) {
-        RCLCPP_WARN(this->get_logger(), "All particle weights are zero. Reinitializing particles.");
-        initializeParticles();
+    if (ess > num_particles_ * 0.5) {
+        RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
+    } 
+/* 
+    //add noise to particle weight in %to the hightest weight
+    double max_weight = maxWeight();
+    std::normal_distribution<double> noise_w(0.0, 0.2*max_weight);
+    for(auto &p : particles_){
+        p.weight +=  noise_w(generator_);
     }
-    
-
-    std::vector<Particle> new_particles;
-    new_particles.reserve(num_particles_);
-
-    // Residual selection: deterministic part
-    std::vector<double> residual_weights;
-    int total_copies = 0;
-    
-    for (const auto &p : particles_) {
-        int num_copies = static_cast<int>(p.weight * num_particles_);  // Integer part
-        total_copies += num_copies;
-        for (int j = 0; j < num_copies; j++) {
-            new_particles.push_back(p);
-        }
-        residual_weights.push_back((p.weight * num_particles_) - num_copies);  // Fractional part
-    }
-
-    // Stochastic selection for remaining particles
-    std::vector<double> cumulative_weights;
-    double sum_residuals = 0.0;
-    for (double rw : residual_weights) {
-        sum_residuals += rw;
-        cumulative_weights.push_back(sum_residuals);
+ */
+    switch (method) {
+        case ResamplingMethod::MULTINOMIAL:
+            multinomialResample();
+            break;
+        case ResamplingMethod::STRATIFIED:
+            stratifiedResample();
+            break;
+        case ResamplingMethod::SYSTEMATIC:
+            systematicResample();
+            break;
+        case ResamplingMethod::RESIDUAL:
+            residualResample();
+            break;
     }
 
-    // Resampling using residual weights
-    std::uniform_real_distribution<double> dist(0.0, sum_residuals);
-    while (total_copies < num_particles_) {
-        double r = dist(generator_);
-        for (size_t i = 0; i < cumulative_weights.size(); i++) {
-            if (r <= cumulative_weights[i]) {
-                new_particles.push_back(particles_[i]);
-                total_copies++;
-                break;
-            }
-        }
-    }
-
-    // Add noise to prevent particle collapse
-    std::normal_distribution<double> noise_x(0.0, 0.02);
-    std::normal_distribution<double> noise_y(0.0, 0.02);
-    std::normal_distribution<double> noise_theta(0.0, 0.01);
-    std::normal_distribution<double> noise_weight(0.0, 0.0006);
-
-    for (auto &p : new_particles) {
-        p.x += noise_x(generator_);
-        p.y += noise_y(generator_);
-        p.theta += noise_theta(generator_);
-        p.weight += noise_weight(generator_);
-
-
-        // Normalize theta to [-π, π]
-        if (p.theta > M_PI) p.theta -= 2 * M_PI;
-        if (p.theta < -M_PI) p.theta += 2 * M_PI;
-    }
-    //std::cout << "Particles after resampling:" << particles_.size() << std::endl;
-    //std::cout << "Particles after resampling:" << new_particles.size() << std::endl;
-    //print size of particles
-    std::sort(new_particles.begin(), new_particles.end(), 
-        [](const Particle &a, const Particle &b) {
-            return a.weight < b.weight;  
-        });
-            // Remove 10% of the particles with the lowest weights
-
-    
-    //take out 10% bad weight particles and add 10% new particles with random values
-    int num_particles_to_remove = static_cast<int>(0.5 * num_particles_);
-    int num_particles_to_add = static_cast<int>(0.5 * num_particles_);
-
-    new_particles.erase(new_particles.end() - num_particles_to_remove, new_particles.end());
-
-    /*for (int i = 0; i < num_particles_to_remove; i++) {
-        //new_particles.pop_back();
-    } */
-    for (int i = 0; i < num_particles_to_add; i++) {
-        new_particles[i].x = std::uniform_real_distribution<double>(-0.75, 0.75)(generator_);
-        new_particles[i].y = std::uniform_real_distribution<double>(-0.75, 0.75)(generator_);
-        new_particles[i].theta = std::uniform_real_distribution<double>(0, 2 * M_PI)(generator_);
-        new_particles[i].weight = 1.0 / num_particles_;
-    }
-
-    particles_ = new_particles;
-
-    //print last 100 to see if the numbers are valid
-    for (int i = 0; i < 100; i++) {
-        std::cout << "New Particle: " << new_particles[num_particles_ -1 - i].x << " " << new_particles[num_particles_ -1 - i].y << " " << new_particles[num_particles_ -1 - i].theta << " " << new_particles[i].weight << std::endl;
-    }
-
-    //print last 100 to see if the numbers are valid
-    for (int i = 1; i < 100; i++) {
-        std::cout << "Particle: " << particles_[num_particles_- i].x << " " << particles_[num_particles_- i].y << " " << particles_[num_particles_- i].theta << " " << particles_[i].weight << std::endl;
-    }
-
-    //normalize weights
-    sum_weights = 0.0;
-    for (const auto &p : particles_) {
-        sum_weights += p.weight;
-    }
-
-    for (auto &p : particles_) {
-        p.weight /= sum_weights;
-    }
-    
-    
-    //std::cout << "Particles after measurement update:" << std::endl;
-    //for (const auto &p : new_particles) {
-    //    std::cout << "Particle: " << p.x << " " << p.y << " " << p.theta << " " << p.weight << std::endl;
-    //}
-
-    RCLCPP_INFO(this->get_logger(), "Resampled particles using Residual Resampling.");
-    //std::cout << "Particles after resampling:" << particles_.size() << std::endl;
-    //std::cout << "Particles after resampling:" << new_particles.size() << std::endl;
-
-    
-    //computeEstimatedPose(); 
+    normalizeWeights();
 }
-
 
 void ParticleFilter::computeEstimatedPose(){
     if (particles_.empty()) return;
 
-    // Sort particles by weight (highest first)
     std::vector<Particle> sorted_particles = particles_;
     std::sort(sorted_particles.begin(), sorted_particles.end(), 
         [](const Particle &a, const Particle &b) {
@@ -389,6 +473,7 @@ void ParticleFilter::computeEstimatedPose(){
     if (theta_last_final < -M_PI) theta_last_final += 2 * M_PI;
     
 }
+
 void ParticleFilter::publishEstimatedPose() {
     if (particles_.empty()) return;
 
@@ -453,51 +538,9 @@ void ParticleFilter::publishEstimatedPose() {
     RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
 
-void ParticleFilter::publishParticles() {
-    if (particles_.empty()) return;
-    /* for (const auto &p : particles_) {
-        if (std::isnan(p.x) || std::isnan(p.y) || std::isnan(p.theta)) {
-            std::cout << "⚠️ WARNING: NaN detected in particles!" << std::endl;
-        }
-    } */
-
-    //std::cout << "Particles in publishParticles:" << particles_.size() << std::endl;
-    //std::cout << "Particles in publishParticles" << std::endl;
-    //for (const auto &p : particles_) {
-    //    std::cout << "Particle: " << p.x << " " << p.y << " " << p.theta << " " << p.weight << std::endl;
-    //}
-
-    
-    geometry_msgs::msg::PoseArray particles_msg;
-    particles_msg.header.stamp = this->get_clock()->now();
-    particles_msg.header.frame_id = "map";
-    //size of particles
-    //std::cout << "Particles size:" << particles_.size() << std::endl; 
-    particles_msg.poses.clear();
-    for (const auto &p : particles_) {
-        geometry_msgs::msg::Pose pose;
-        pose.position.x = p.x;
-        pose.position.y = p.y;
-
-        tf2::Quaternion q;
-        q.setRPY(0, 0, p.theta);
-        pose.orientation.x = q.x();
-        pose.orientation.y = q.y();
-        pose.orientation.z = q.z();
-        pose.orientation.w = q.w();
-
-        particles_msg.poses.push_back(pose);
-    }
-
-    particles_pub_->publish(particles_msg);
-}
-
-
-// Main function
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<ParticleFilter>());
     rclcpp::shutdown();
     return 0;
 }
-

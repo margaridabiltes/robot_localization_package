@@ -12,8 +12,15 @@
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp> 
+#include <tf2/LinearMath/Transform.h>
+#include <tf2/utils.h>
 #include <vector>
 #include <random>
+
+#define noise_x_ 0.02
+#define noise_y_ 0.02
+#define noise_theta_ 0.02
+
 
 class ParticleFilter : public rclcpp::Node {
 public:
@@ -26,6 +33,14 @@ private:
         double weight;      
     };
 
+    enum class ResamplingMethod {
+        MULTINOMIAL,
+        STRATIFIED,
+        SYSTEMATIC,
+        RESIDUAL
+    };
+    
+
     bool first_update_ = true;  
 
 
@@ -37,7 +52,6 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_2;
 
     
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -63,7 +77,7 @@ private:
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     double sensor_noise_ = 0.5; 
 
-    void resampleParticles();
+    void resampleParticles(ResamplingMethod method);
 
     void publishEstimatedPose();
 
@@ -74,5 +88,20 @@ private:
     void publishParticles();
 
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
+
+    void multinomialResample();
+    void stratifiedResample();
+    void systematicResample();
+    void residualResample();
+
+    void normalizeWeights();
+    double maxWeight();
+
+    void replaceWorstParticles();
+
+    void cleanOutliers();
+
+    double getOutlierPercentage();
+
 };
 #endif
