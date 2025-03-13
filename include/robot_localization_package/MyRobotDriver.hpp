@@ -7,6 +7,7 @@
 #include <webots/robot.h>
 #include <webots/motor.h>
 #include <webots/position_sensor.h>
+#include <webots/lidar.h>
 #include "webots_ros2_driver/PluginInterface.hpp"
 #include "webots_ros2_driver/WebotsNode.hpp"
 
@@ -46,6 +47,7 @@ private:
   WbDeviceTag left_motor;
   WbDeviceTag right_encoder;
   WbDeviceTag left_encoder;
+  WbDeviceTag lidar2D;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_real;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_relative;
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odom_pub_;

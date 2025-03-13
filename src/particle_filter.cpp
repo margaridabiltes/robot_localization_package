@@ -72,7 +72,7 @@ void ParticleFilter::initializeParticles() {
 
 std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
     std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75}, {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}
+        {-0.75, 0.75}/* , {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75} */
     };
 
     std::vector<std::pair<double, double>> features_particle;
@@ -106,34 +106,19 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double roll, pitch, odom_theta;
     tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
 
-    std::normal_distribution<double> noise_x(0.0, 0.05);
-    std::normal_distribution<double> noise_y(0.0, 0.05);
-    std::normal_distribution<double> noise_theta(0.0, 0.01);
-
-    if (first_update_) {
-        last_x_ = odom_x;
-        last_y_ = odom_y;
-        last_theta_ = odom_theta;
-        first_update_ = false; 
-        if (!last_keypoint_msg_) {
-            RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
-            return;
-        }
-        else{
-            measurementUpdate(last_keypoint_msg_);
-            RCLCPP_INFO(this->get_logger(), "Ignored first motion update (initial spawn) but performed measurement update.");
-        }
-        RCLCPP_INFO(this->get_logger(), "Initialized motion update.");
-    }
-
+    
     double delta_x = odom_x - last_x_;
     double delta_y = odom_y - last_y_;
     double delta_theta = odom_theta - last_theta_;
     double delta_distance = std::hypot(delta_x, delta_y);
+    
+    std::normal_distribution<double> noise_x(0.0, 0.05);
+    std::normal_distribution<double> noise_y(0.0, 0.05);
+    std::normal_distribution<double> noise_theta(0.0, 0.01);
 
     for(auto &p : particles_){
         p.x = p.init_x + odom_x * std::cos(p.init_theta) - odom_y * std::sin(p.init_theta)  + noise_x(generator_);
-        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) +noise_y(generator_);
+        p.y = p.init_y + odom_x * std::sin(p.init_theta) + odom_y * std::cos(p.init_theta) + noise_y(generator_);
         p.theta = p.init_theta + odom_theta + noise_theta(generator_);
 
         if (p.theta > M_PI) p.theta -= 2 * M_PI;
@@ -197,10 +182,17 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
             likelihood += std::exp(- (min_dist * min_dist) / (2 * sensor_noise_ * sensor_noise_));  
         }
     
-        p.weight *= likelihood;  
+        p.weight *= likelihood; 
         sum_weights += p.weight;
     }
 
+    double avg_weight = sum_weights / num_particles_;
+    // Communist weight distribution
+    for (auto &p : particles_) {
+        if(p.weight > 2 * avg_weight){
+            p.weight = 2 * avg_weight;
+        }
+    }
     
     
     // Normalize weights

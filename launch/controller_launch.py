@@ -38,8 +38,24 @@ def generate_launch_description():
         prefix="gnome-terminal --",
     )
 
+    tf_static = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="map_to_odom_broadcaster",
+        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"]
+    )
+
+    tf_static_lidar = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="map_to_odom_broadcaster",
+        arguments=["0", "0", "0", "0", "0", "0", "base_link", "lidar2D"]
+    )
+
 
     return LaunchDescription([
+        tf_static,
+        tf_static_lidar,
         rviz,
         webots,
         my_robot_driver,

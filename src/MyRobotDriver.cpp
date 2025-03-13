@@ -19,6 +19,10 @@ void MyRobotDriver::init(
   right_encoder = wb_robot_get_device("right wheel encoder");
   left_encoder = wb_robot_get_device("left wheel encoder");
 
+  lidar2D = wb_robot_get_device("lidar2D");
+  wb_lidar_enable(lidar2D, TIME_STEP);
+  wb_lidar_enable_point_cloud(lidar2D);
+
   wb_position_sensor_enable(right_encoder, TIME_STEP);
   wb_position_sensor_enable(left_encoder, TIME_STEP);
 
@@ -132,26 +136,16 @@ void MyRobotDriver::step() {
   double updated_theta = est_theta + delta_theta / 2.0;
   if(updated_theta > M_PI) updated_theta -= 2 * M_PI;
   if(updated_theta < -M_PI) updated_theta += 2 * M_PI;
+
   
-  double est_cos_theta = std::cos(updated_theta);
-  double est_sin_theta = std::sin(updated_theta);
-  
-  est_x += delta_distance * std::cos(est_theta + delta_theta / 2.0);
-  est_y += delta_distance * std::sin(est_theta + delta_theta / 2.0);
+  est_x += delta_distance * std::cos(updated_theta);
+  est_y += delta_distance * std::sin(updated_theta);
   est_theta += delta_theta;
   if(est_theta > M_PI) est_theta -= 2 * M_PI;
   if(est_theta < -M_PI) est_theta += 2 * M_PI;
   
   tf2::Quaternion est_q;
   est_q.setRPY(0, 0, est_theta);
-  //std::cout << "delta_distance: " << delta_distance << std::endl;
-  //std::cout << "delta_theta: " << delta_theta << std::endl;
-  //std::cout << "updated_theta: " << updated_theta << std::endl; 
-  //std::cout << "cos_theta: " << est_cos_theta << " sin_theta: " << est_sin_theta << std::endl;
-  //std::cout << "wheels: " << left_wheel_position << " " << right_wheel_position << std::endl;
-  //std::cout << "deltas" << delta_left_wheel << " " << delta_right_wheel << std::endl;
-  //std::cout << "position: " << est_x << " " << est_y << " " << est_theta << std::endl;
-  //std::cout << "quaternion: " << est_q.x() << " " << est_q.y() << " " << est_q.z() << " " << est_q.w() << std::endl;
 
   geometry_msgs::msg::TransformStamped tf_relative;
   tf_relative.header.stamp = rclcpp::Clock().now();

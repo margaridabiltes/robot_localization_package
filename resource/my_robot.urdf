@@ -1,21 +1,9 @@
 <?xml version="1.0" ?>
 <robot name="My robot">
     <webots>
-        <device reference="ds0" type="DistanceSensor">
-            <ros>
-                <topicName>/left_sensor</topicName>
-                <alwaysOn>true</alwaysOn>
-            </ros>
-        </device>
-        <device reference="lidar" type="Lidar">
+        <device reference="lidar2D" type="Lidar">
             <ros>
                 <topicName>/scan2D</topicName>
-                <alwaysOn>true</alwaysOn>
-            </ros>
-        </device>
-        <device reference="ds1" type="DistanceSensor">
-            <ros>
-                <topicName>/right_sensor</topicName>
                 <alwaysOn>true</alwaysOn>
             </ros>
         </device>
