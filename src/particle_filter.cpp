@@ -38,6 +38,8 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
 //! auxiliar functions start!//
 
+#pragma region auxiliar functions
+
 void ParticleFilter::normalizeWeights(){
     double sum_weights = 0;
     for (auto &p : particles_) {
@@ -83,11 +85,11 @@ void ParticleFilter::publishParticles() {
     particles_pub_->publish(particles_msg);
 }
 
-void ParticleFilter::replaceWorstParticles() {
+void ParticleFilter::replaceWorstParticles( double percentage ) {
     std::sort(particles_.begin(), particles_.end(), 
               [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
 
-    int num_replace = num_particles_ * 0.1;
+    int num_replace = num_particles_ * percentage;
 
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
     std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
@@ -111,7 +113,7 @@ void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::S
 
 std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
     std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75} , {0.75, 0.75}/*, {0.75, -0.75}, {-0.75, -0.75} */
+        {-0.75, 0.75} , {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75} 
     };
 
     std::vector<std::pair<double, double>> features_particle;
@@ -137,13 +139,25 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
 }
 
 void ParticleFilter::cleanOutliers(){
+    //random x between -0.75, 0.75 ; y and theta
+    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_theta(0, 2*M_PI);
+    double max_weight = maxWeight();
 
-    
-
+    for(auto &p : particles_){
+        if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
+            p.x= dist_x(generator_);
+            p.y= dist_y(generator_);
+            p.theta= dist_theta(generator_);
+            p.weight= 0.1*max_weight;
+        }
+    }
+    normalizeWeights();
 }
 
 double ParticleFilter::getOutlierPercentage(){
-    int num_outliers=0;
+    double num_outliers=0.0;
     for(auto &p : particles_){
         if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
             num_outliers++;
@@ -153,13 +167,18 @@ double ParticleFilter::getOutlierPercentage(){
         return 0;
     }
     else{
+        std::cout<<"Percentage: "<<(num_outliers/num_particles_)<<std::endl;
         return (num_outliers/num_particles_);
     }
 }
 
+#pragma endregion auxiliar functions
+
 //! auxiliar functions end!//
 
 //! Resampling functions start !//
+
+#pragma region resampling functions
 
 void ParticleFilter::multinomialResample() {
     std::vector<Particle> new_particles;
@@ -268,7 +287,13 @@ void ParticleFilter::residualResample() {
     particles_ = new_particles;
 }
 
+#pragma endregion resampling functions
+
 //! Resampling functions end !//
+
+//! Particle Filter Functions !//
+
+#pragma region pf functions
 
 void ParticleFilter::initializeParticles() {
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
@@ -285,7 +310,7 @@ void ParticleFilter::initializeParticles() {
         p.init_y = p.y;
         p.init_theta = p.theta;
     }
-    RCLCPP_INFO(this->get_logger(), "Initialized %d particles across map.", num_particles_);
+    RCLCPP_INFO(this->get_logger(), "Initialized %f particles across map.", num_particles_);
 }
 
 void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
@@ -316,21 +341,22 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_y = odom_y - last_y_;
     double delta_theta = odom_theta - last_theta_;
     double delta_distance = std::hypot(delta_x, delta_y);
-    
-    for(auto &p : particles_){
-        p.x =  p.init_x + odom_x* std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_)  ;
-        p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
-        p.theta = p.init_theta+  odom_theta  + noise_theta(generator_) ;
 
-
-        if (p.theta > M_PI) p.theta -= 2 * M_PI;
-        if (p.theta < -M_PI) p.theta += 2 * M_PI;
-    }
 
     if (delta_distance > 0.1 || std::abs(delta_theta) > 0.2) {
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
+        }
+
+        for(auto &p : particles_){
+            p.x =  p.init_x + odom_x* std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_)  ;
+            p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
+            p.theta = p.init_theta+  odom_theta  + noise_theta(generator_) ;
+    
+    
+            if (p.theta > M_PI) p.theta -= 2 * M_PI;
+            if (p.theta < -M_PI) p.theta += 2 * M_PI;
         }
 
         last_x_ = odom_x;
@@ -350,6 +376,21 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         return;
     }
 
+/* 
+    if(getOutlierPercentage() > 0.1){
+        std::cout<<"ESTOU A ENTRAR AQUI"<< std::endl;
+        cleanOutliers();
+    }
+    else{
+        if(getOutlierPercentage()==0){
+            replaceWorstParticles(0.1);
+        }
+        else{        
+            cleanOutliers();
+            replaceWorstParticles(0.1-getOutlierPercentage());
+        }
+    } 
+ */
     // Extract observed features from the PointCloud2 message
     std::vector<std::pair<double, double>> observed_features;
     sensor_msgs::PointCloud2Iterator<float> iter_x(*msg, "x");
@@ -388,8 +429,8 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
 
     normalizeWeights();
     
-    resampleParticles(ResamplingMethod::STRATIFIED);
-    replaceWorstParticles();
+    resampleParticles(ResamplingMethod::MULTINOMIAL); 
+ 
 }
 
 void ParticleFilter::resampleParticles(ResamplingMethod method) {
@@ -399,13 +440,13 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
     }
 
     // Compute Effective Sample Size (ESS)
-    double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
+     double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
         [](double sum, const Particle &p) { return sum + p.weight * p.weight; });
 
     if (ess > num_particles_ * 0.5) {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
-    } 
+    }  
 /* 
     //add noise to particle weight in %to the hightest weight
     double max_weight = maxWeight();
@@ -540,3 +581,7 @@ int main(int argc, char **argv) {
     rclcpp::shutdown();
     return 0;
 }
+
+#pragma endregion pf functions
+
+//! Particle Filter Functions !//

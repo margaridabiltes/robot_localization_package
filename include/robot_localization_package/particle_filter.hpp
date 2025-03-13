@@ -44,7 +44,7 @@ private:
     bool first_update_ = true;  
 
 
-    int num_particles_; 
+    double num_particles_; 
     std::vector<Particle> particles_;
     
 
@@ -97,7 +97,7 @@ private:
     void normalizeWeights();
     double maxWeight();
 
-    void replaceWorstParticles();
+    void replaceWorstParticles(double percentage);
 
     void cleanOutliers();
 
