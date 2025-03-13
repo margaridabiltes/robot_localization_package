@@ -317,10 +317,6 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_theta = odom_theta - last_theta_;
     double delta_distance = std::hypot(delta_x, delta_y);
     
-    std::normal_distribution<double> noise_x(0.0, 0.05);
-    std::normal_distribution<double> noise_y(0.0, 0.05);
-    std::normal_distribution<double> noise_theta(0.0, 0.01);
-
     for(auto &p : particles_){
         p.x =  p.init_x + odom_x* std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_)  ;
         p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
