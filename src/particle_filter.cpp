@@ -93,7 +93,7 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
     std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_theta(0, 2 * M_PI);
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     for (int i = 0; i < num_replace; i++) {
         particles_[i].x = dist_x(generator_);
@@ -140,9 +140,12 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
 
 void ParticleFilter::cleanOutliers(){
     //random x between -0.75, 0.75 ; y and theta
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
+
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
     std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_theta(0, 2*M_PI);
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
     double max_weight = maxWeight();
 
     for(auto &p : particles_){
@@ -296,9 +299,13 @@ void ParticleFilter::residualResample() {
 #pragma region pf functions
 
 void ParticleFilter::initializeParticles() {
+
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
+
     std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
     std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_theta(0, 2 * M_PI); 
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
 
     particles_.resize(num_particles_);
     for (auto &p : particles_) {
@@ -333,9 +340,9 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double roll, pitch, odom_theta;
     tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
 
-    std::normal_distribution<double> noise_x(0.0, noise_x_);
-    std::normal_distribution<double> noise_y(0.0, noise_y_);
-    std::normal_distribution<double> noise_theta(0.0, noise_theta_);
+    std::uniform_real_distribution<double> noise_x(0.0, noise_x_);
+    std::uniform_real_distribution<double> noise_y(0.0, noise_y_);
+    std::uniform_real_distribution<double> noise_theta(0.0, noise_theta_);
 
     double delta_x = odom_x - last_x_;
     double delta_y = odom_y - last_y_;
@@ -350,6 +357,9 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         }
 
         for(auto &p : particles_){
+            unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+            generator_.seed(seed);
+
             p.x =  p.init_x + odom_x* std::cos(p.init_theta) - odom_y * std::sin(p.init_theta) + noise_x(generator_)  ;
             p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
             p.theta = p.init_theta+  odom_theta  + noise_theta(generator_) ;
@@ -401,7 +411,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     }
 
     double sum_weights = 0;
-    std::normal_distribution<double> measurement_noise(0.0, sensor_noise_ * 0.1); 
+    std::uniform_real_distribution<double> measurement_noise(0.0, sensor_noise_ * 0.1); 
 
     // Update particle weights based on feature matching
     for (auto &p : particles_) {
@@ -409,6 +419,9 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     
         double likelihood = 0.0;  
         for (const auto &obs : observed_features) {
+            unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+            generator_.seed(seed);
+
             double min_dist = std::numeric_limits<double>::max();
             
             // Apply noise to the measurement
@@ -430,6 +443,8 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     normalizeWeights();
     
     resampleParticles(ResamplingMethod::MULTINOMIAL); 
+    replaceWorstParticles(0.1-getOutlierPercentage());
+
  
 }
 
@@ -447,14 +462,17 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
     }  
-/* 
+
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
+
     //add noise to particle weight in %to the hightest weight
     double max_weight = maxWeight();
-    std::normal_distribution<double> noise_w(0.0, 0.2*max_weight);
+    std::uniform_real_distribution<double> noise_w(0.0, 0.2*max_weight);
     for(auto &p : particles_){
         p.weight +=  noise_w(generator_);
     }
- */
+ 
     switch (method) {
         case ResamplingMethod::MULTINOMIAL:
             multinomialResample();
