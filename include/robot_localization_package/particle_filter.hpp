@@ -18,9 +18,9 @@
 #include <vector>
 #include <random>
 
-#define noise_x_ 0.02
-#define noise_y_ 0.02
-#define noise_theta_ 0.02
+#define noise_x_ 0.06
+#define noise_y_ 0.06
+#define noise_theta_ 0.1
 
 
 class ParticleFilter : public rclcpp::Node {
@@ -93,6 +93,8 @@ private:
     
     void publishParticles();
 
+    double computeSensorNoise(double distance);
+
     std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
 
     void multinomialResample();
@@ -106,7 +108,7 @@ private:
 
     void replaceWorstParticles(double percentage);
 
-    void cleanOutliers();
+    void cleanOutliers(double num_outliers);
 
     double getOutlierPercentage();
 
