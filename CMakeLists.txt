@@ -16,6 +16,8 @@ find_package(tf2_ros REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2)
+find_package(visualization_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 ## Fake feature extractor
 include_directories(
@@ -35,6 +37,7 @@ ament_target_dependencies(particle_filter
   nav_msgs
   tf2_geometry_msgs
   tf2
+  visualization_msgs
 )
 install(TARGETS
   particle_filter

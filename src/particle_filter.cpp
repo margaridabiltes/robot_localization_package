@@ -20,7 +20,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
-    particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("/particles", 10);
+    particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/markers", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
     //timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
@@ -32,6 +32,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     }
 
     initializeParticles();
+    computeColorWeightLookup();
 
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 }
@@ -59,30 +60,79 @@ double ParticleFilter::maxWeight(){
     return max_weight;
 }
 
+void ParticleFilter::computeColorWeightLookup() {
+    double average_weight = 1.0 / num_particles_;
+
+    ColorWeightLookup = {
+        {0.9 * average_weight, {1.0, 1.0, 1.0}}, // White
+        {average_weight, {0.56, 0.0, 1.0}}, // Violet
+        {1.05 * average_weight, {0.0, 0.0, 1.0}}, // Blue
+        {1.1 * average_weight, {0.0, 1.0, 0.5}}, // Cyan
+        {1.15 * average_weight, {0.0, 1.0, 0.0}}, // Green
+        {1.2 * average_weight, {1.0, 1.0, 0.0}}, // Yellow
+        {1.5 * average_weight, {1.0, 0.5, 0.0}}, // Orange
+        {std::numeric_limits<double>::max(), {1.0, 0.0, 0.0}}  // Red
+    };
+}
+
+
+std::vector<double> ParticleFilter::colorFromWeight(double weight) {
+
+    for (const auto& entry : ColorWeightLookup) {
+        if (weight < entry.first) {
+            return entry.second; // Return the corresponding RGB color
+        }
+    }
+    return {1.0, 0.0, 0.0}; // Default to Red (should never reach here)
+}
+
 void ParticleFilter::publishParticles() {
     if (particles_.empty()) return;
     
-    geometry_msgs::msg::PoseArray particles_msg;
-    particles_msg.header.stamp = this->get_clock()->now();
-    particles_msg.header.frame_id = "map";
+    //geometry_msgs::msg::PoseArray particles_msg;
+    visualization_msgs::msg::MarkerArray marker_array;
 
-    particles_msg.poses.clear();
+    double max_weight = maxWeight();
+    std::cout << "max_weight: " << max_weight << std::endl;
+
+    int i = 0;
     for (const auto &p : particles_) {
-        geometry_msgs::msg::Pose pose;
-        pose.position.x = p.x;
-        pose.position.y = p.y;
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "map";
+        marker.header.stamp = this->get_clock()->now();
+        marker.ns = "particles";
+        marker.id = i++;
+
+        marker.type = visualization_msgs::msg::Marker::ARROW;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+
+        marker.pose.position.x = p.x;
+        marker.pose.position.y = p.y;
+        marker.pose.position.z = 0.0;
 
         tf2::Quaternion q;
         q.setRPY(0, 0, p.theta);
-        pose.orientation.x = q.x();
-        pose.orientation.y = q.y();
-        pose.orientation.z = q.z();
-        pose.orientation.w = q.w();
+        marker.pose.orientation.x = q.x();
+        marker.pose.orientation.y = q.y();
+        marker.pose.orientation.z = q.z();
+        marker.pose.orientation.w = q.w();
 
-        particles_msg.poses.push_back(pose);
+        marker.scale.x = 0.07;
+        marker.scale.y = 0.005;
+        marker.scale.z = 0.01;
+        
+        std::vector<double> color = colorFromWeight(p.weight);
+        marker.color.a = 1.0;
+        marker.color.r = color[0];
+        marker.color.g = color[1];
+        marker.color.b = color[2];
+        
+        marker.lifetime = rclcpp::Duration::from_nanoseconds(0);
+
+        marker_array.markers.push_back(marker);
     }
 
-    particles_pub_->publish(particles_msg);
+    particles_pub_->publish(marker_array);
 }
 
 void ParticleFilter::replaceWorstParticles( double percentage ) {

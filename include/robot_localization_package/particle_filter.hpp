@@ -10,6 +10,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp> 
 #include <geometry_msgs/msg/pose_array.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp> 
 #include <tf2/LinearMath/Transform.h>
@@ -41,15 +42,18 @@ private:
     };
     
 
+
     bool first_update_ = true;  
 
+    void computeColorWeightLookup();
+    std::vector<std::pair<double, std::vector<double>>> ColorWeightLookup;
 
     double num_particles_; 
     std::vector<Particle> particles_;
     
 
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particles_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
 
@@ -79,6 +83,8 @@ private:
 
     void resampleParticles(ResamplingMethod method);
 
+    std::vector<double> colorFromWeight(double weight);
+
     void publishEstimatedPose();
 
     rclcpp::TimerBase::SharedPtr timer_pose_;
@@ -96,6 +102,7 @@ private:
 
     void normalizeWeights();
     double maxWeight();
+
 
     void replaceWorstParticles(double percentage);
 
