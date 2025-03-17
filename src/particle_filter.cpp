@@ -1,7 +1,7 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000),
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(10000),
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_keypoint_msg_(nullptr)
 {
@@ -433,12 +433,16 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
             p.y =  p.init_y + odom_x* std::sin(p.init_theta) + odom_y * std::cos(p.init_theta)  + noise_y(generator_) ;
             p.theta = p.init_theta+  odom_theta  + noise_theta(generator_) ;
     
-            //p.x = std::max(-0.75, std::min(0.75, p.x));
-            //p.y = std::max(-0.75, std::min(0.75, p.y));
-    
             if (p.theta > M_PI) p.theta -= 2 * M_PI;
             if (p.theta < -M_PI) p.theta += 2 * M_PI;
         }
+
+        for (auto &p : particles_) {
+            if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
+                p.weight = p.weight/2;
+            }
+        }
+        
 
         last_x_ = odom_x;
         last_y_ = odom_y;
