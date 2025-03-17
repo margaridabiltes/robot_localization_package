@@ -17,9 +17,11 @@
 #include <tf2/utils.h>
 #include <vector>
 #include <random>
+#include <Eigen/Dense>
 
-#define noise_x_ 0.06
-#define noise_y_ 0.06
+
+#define noise_x_ 0.1
+#define noise_y_ 0.1
 #define noise_theta_ 0.1
 
 
@@ -107,8 +109,6 @@ private:
 
 
     void replaceWorstParticles(double percentage);
-
-    void cleanOutliers(double num_outliers);
 
     double getOutlierPercentage();
 

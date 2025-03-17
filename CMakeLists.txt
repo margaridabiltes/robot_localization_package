@@ -18,6 +18,8 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2)
 find_package(visualization_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(Eigen3 REQUIRED)
+
 
 ## Fake feature extractor
 include_directories(
@@ -38,6 +40,7 @@ ament_target_dependencies(particle_filter
   tf2_geometry_msgs
   tf2
   visualization_msgs
+  Eigen3
 )
 install(TARGETS
   particle_filter
