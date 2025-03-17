@@ -398,24 +398,30 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     std::uniform_real_distribution<double> noise_x(-noise_x_, noise_x_);
     std::uniform_real_distribution<double> noise_y(-noise_y_, noise_y_);
     std::uniform_real_distribution<double> noise_theta(-noise_theta_, noise_theta_);
+    
+    double delta_x_odom = odom_x - last_x_;
+    double delta_y_odom = odom_y - last_y_;
+    double delta_theta_odom = odom_theta - last_theta_;
+    double delta_distance = std::hypot(delta_x_odom, delta_y_odom);
 
-    double delta_x = odom_x - last_x_;
-    double delta_y = odom_y - last_y_;
-    double delta_theta = odom_theta - last_theta_;
-    double delta_distance = std::hypot(delta_x, delta_y);
+    double theta_ = std::atan2(delta_y_odom, delta_x_odom);
+    double alpha = odom_theta + theta_;
+    double delta_x_robot = delta_distance * std::cos(alpha);
+    double delta_y_robot = delta_distance * std::sin(alpha);
 
 
-    if (delta_distance > 0.2 || std::abs(delta_theta) > 0.2) {
+    if (delta_distance > 0.2 || std::abs(delta_theta_odom) > 0.2) {
         if (!last_keypoint_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
         }
+        
 
         for(auto &p : particles_){
 
-            p.x += delta_x* std::cos(delta_theta) - delta_y * std::sin(delta_theta) + noise_x(generator_)  ;
-            p.y += delta_x* std::sin(delta_theta) + delta_y * std::cos(delta_theta)  + noise_y(generator_) ;
-            p.theta +=  delta_theta  + noise_theta(generator_) ;
+            p.x += delta_x_robot* std::cos(p.theta) - delta_y_robot * std::sin(p.theta) + noise_x(generator_)  ;
+            p.y += delta_x_robot* std::sin(p.theta) + delta_y_robot * std::cos(p.theta)  + noise_y(generator_) ;
+            p.theta +=  delta_theta_odom  + noise_theta(generator_) ;
     
             if (p.theta > M_PI) p.theta -= 2 * M_PI;
             if (p.theta < -M_PI) p.theta += 2 * M_PI;
