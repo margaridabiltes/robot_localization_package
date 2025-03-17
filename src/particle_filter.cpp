@@ -2,7 +2,7 @@
 
 
 ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000),
-    last_x_(0.0), last_y_(0.0), last_theta_(0.0), first_update_(true),
+    last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_keypoint_msg_(nullptr)
 {
     std::cout << "ParticleFilter Constructor START" << std::endl;  
@@ -156,6 +156,29 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
     normalizeWeights();
 }
 
+void ParticleFilter::injectRandomParticles(double percentage){
+    //replace random particles
+    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
+
+    int num_replace = num_particles_ * percentage;
+
+    //get random num_replace particles index
+    std::vector<int> random_index;
+    for(int i = 0; i < num_replace; i++){
+        random_index.push_back(rand() % (int)num_particles_);
+    }
+
+    for (int i = 0; i < num_replace; i++) {
+        particles_[random_index[i]].x = dist_x(generator_);
+        particles_[random_index[i]].y = dist_y(generator_);
+        particles_[random_index[i]].theta = dist_theta(generator_);
+        particles_[random_index[i]].weight = 1.0 / num_particles_; 
+    }
+
+}
+
 void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     last_keypoint_msg_ = msg;  
 }
@@ -187,37 +210,10 @@ std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const
     return features_particle;
 }
 
-double ParticleFilter::getOutlierPercentage(){
-    double num_outliers=0.0;
-    for(auto &p : particles_){
-        if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
-            num_outliers++;
-        }
-    }
-    if(num_outliers == 0){
-        return 0;
-    }
-    else{
-        std::cout<<"Percentage: "<<(num_outliers/num_particles_)<<std::endl;
-        return (num_outliers/num_particles_);
-    }
-}
-
-/* double ParticleFilter::computeSensorNoise(double distance) {
-    double min_noise = 0.02;
-    double max_noise = 0.2;  
-    double max_distance = 0.75; 
-
-    // Noise increases as distance grows (linear model)
-    double noise = min_noise + (max_noise - min_noise) * (distance / max_distance);
-
-    return std::min(std::max(noise, min_noise), max_noise);
-} */
-
 double ParticleFilter::computeSensorNoise(double distance) {
-    double min_noise = 0.02;
-    double max_noise = 0.2;  
-    double max_distance = 0.75; 
+    double min_noise = 0.04;
+    double max_noise = 0.4;  
+    double max_distance = 1.5; 
 
     // Quadratic noise model (better fit for real-world LIDAR)
     double noise = min_noise + (max_noise - min_noise) * (distance * distance / (max_distance * max_distance));
@@ -391,10 +387,6 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double roll, pitch, odom_theta;
     tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
 
-
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    generator_.seed(seed);
-
     std::uniform_real_distribution<double> noise_x(-noise_x_, noise_x_);
     std::uniform_real_distribution<double> noise_y(-noise_y_, noise_y_);
     std::uniform_real_distribution<double> noise_theta(-noise_theta_, noise_theta_);
@@ -415,7 +407,6 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
         }
-        
 
         for(auto &p : particles_){
 
@@ -452,55 +443,6 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         observed_features.emplace_back(*iter_x, *iter_y);
     }
 
-/* 
-    for (auto &p : particles_) {
-        if(p.x>0.75 || p.x<-0.75 || p.y>0.75 || p.y<-0.75){
-            p.weight = p.weight/2;
-        }
-    }
-    normalizeWeights();
- */
-    /* // Update particle weights based on feature matching
-    for (auto &p : particles_) {
-        std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
-
-        double likelihood = 0.0;  
-        for (const auto &obs : observed_features) {
-            
-
-            double distance = std::hypot(obs.first, obs.second);
-            double adaptive_noise = computeSensorNoise(distance);
-            std::uniform_real_distribution<double> measurement_noise(-adaptive_noise, adaptive_noise);
-
-            // Apply noise to the measurement
-            double noisy_x = obs.first + measurement_noise(generator_);
-            double noisy_y = obs.second + measurement_noise(generator_);
-
-            // Weighted distance calculation
-            double weighted_dist = 0.0;
-            double weight_sum = 0.0;
-
-            for (const auto &exp : expected_features) {
-                double dist = std::hypot(noisy_x - exp.first, noisy_y - exp.second);
-                double weight = std::exp(-dist / 0.5);  // Decay function for weights
-                weighted_dist += weight * dist;
-                weight_sum += weight;
-            }
-
-            // Normalize weighted distance
-            if (weight_sum > 0) {
-                weighted_dist /= weight_sum;
-            } else {
-                weighted_dist = std::numeric_limits<double>::max(); // Avoid division by zero
-            }
-
-            likelihood += 0.5 + 0.5 * std::exp(- (weighted_dist * weighted_dist) / (2 * adaptive_noise * adaptive_noise));
-        }
-
-        p.weight *= likelihood;
-    }   */
- 
-   
     for (auto &p : particles_) {
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
     
@@ -526,64 +468,21 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         }
     
         p.weight *= likelihood;     
-    }  
-    
-    normalizeWeights();
-/* 
-    double sigma_ang = 0.05; // Assume fixed angular noise
-
-    for (auto &p : particles_) {
-        std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
-        double likelihood = 1.0;  // Use multiplication instead of summing
-
-        for (const auto &obs : observed_features) {
-            double z_dist = std::hypot(obs.first, obs.second);  // Measured distance
-            double z_ang = std::atan2(obs.second, obs.first);   // Measured angle
-
-            // Find the closest expected feature (Feature Matching)
-            double min_dist = std::numeric_limits<double>::max();
-            double best_ẑ_dist = 0.0, best_ẑ_ang = 0.0;
-
-            for (const auto &exp : expected_features) {
-                double ẑ_dist = std::hypot(exp.first, exp.second);  // Expected distance
-                double ẑ_ang = std::atan2(exp.second, exp.first);   // Expected angle
-
-                double dist_error = std::hypot(ẑ_dist - z_dist, ẑ_ang - z_ang); // Matching metric
-
-                if (dist_error < min_dist) {  // Pick the best match
-                    min_dist = dist_error;
-                    best_ẑ_dist = ẑ_dist;
-                    best_ẑ_ang = ẑ_ang;
-                }
-            }
-
-            // Compute distance-dependent noise
-            double sigma_dist = computeSensorNoise(best_ẑ_dist);  
-
-            // Construct covariance matrix R
-            Eigen::Matrix2d R;
-            R << sigma_dist * sigma_dist, 0,
-                 0, sigma_ang * sigma_ang;
-            Eigen::Matrix2d R_inv = R.inverse();
-
-            // Compute error vector e = [expected - observed]
-            Eigen::Vector2d error;
-            error << (best_ẑ_dist - z_dist), (best_ẑ_ang - z_ang);
-
-            // Apply 2D Gaussian likelihood function
-            double prob = std::exp(-0.5 * error.transpose() * R_inv * error);
-            likelihood *= prob;  // Product over all matched landmarks
-        }
-
-        p.weight *= likelihood;  // Update weight with likelihood
     }
- */
+    
+    
+    for ( auto &p : particles_){
+        if(p.x > 0.75 || p.x < -0.75 || p.y > 0.75 || p.y < -0.75){
+            p.weight =p.weight/ 2;
+        }
+    } 
+  
     normalizeWeights();
 
-    resampleParticles(ResamplingMethod::RESIDUAL);  
-
-    //replaceWorstParticles(0.1);
+    resampleParticles(ResamplingMethod::RESIDUAL); 
     
+    replaceWorstParticles(0.05);
+
 }
 
 void ParticleFilter::resampleParticles(ResamplingMethod method) {
@@ -591,18 +490,6 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
         RCLCPP_WARN(this->get_logger(), "No particles to resample.");
         return;
     }
-
-    /* if(getOutlierPercentage()<0.4){
-
-        // Compute Effective Sample Size (ESS)
-        double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
-        [](double sum, const Particle &p) { return sum + p.weight * p.weight; });
-
-        if (ess > num_particles_ * 0.5) {
-            RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
-            return;
-        }  
-    } */
 
     double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
     [](double sum, const Particle &p) { return sum + (p.weight * p.weight); });
@@ -613,14 +500,6 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
         RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
         return;
     }  
-
-/* 
-    //add noise to particle weight in %to the hightest weight
-    double max_weight = maxWeight();
-    std::uniform_real_distribution<double> noise_w(0, 0.2*max_weight);
-    for(auto &p : particles_){
-        p.weight +=  noise_w(generator_);
-    } */
 
     switch (method) {
         case ResamplingMethod::MULTINOMIAL:
@@ -640,6 +519,15 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
     for(auto &p : particles_){
         p.weight = 1.0 / num_particles_;
     }
+
+    iterationCounter++;
+
+    if(iterationCounter == MAX_ITERATION){
+        std::cout<<"Injecting particles"<<std::endl;
+        injectRandomParticles(0.1);
+        iterationCounter=0;
+    } 
+    
 }
 
 void ParticleFilter::computeEstimatedPose(){
