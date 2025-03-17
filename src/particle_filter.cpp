@@ -442,7 +442,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
                 p.weight = p.weight/2;
             }
         }
-        
+        normalizeWeights();
 
         last_x_ = odom_x;
         last_y_ = odom_y;
