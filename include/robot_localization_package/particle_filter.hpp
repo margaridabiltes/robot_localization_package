@@ -20,9 +20,9 @@
 #include <Eigen/Dense>
 
 
-#define noise_x_ 0.1
-#define noise_y_ 0.1
-#define noise_theta_ 0.1
+#define noise_x_ 0.05
+#define noise_y_ 0.05
+#define noise_theta_ 0.5
 
 
 class ParticleFilter : public rclcpp::Node {

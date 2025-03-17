@@ -401,14 +401,14 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     
     double delta_x_odom = odom_x - last_x_;
     double delta_y_odom = odom_y - last_y_;
-    double delta_theta_odom = odom_theta - last_theta_;
     double delta_distance = std::hypot(delta_x_odom, delta_y_odom);
-
-    double theta_ = std::atan2(delta_y_odom, delta_x_odom);
-    double alpha = odom_theta + theta_;
-    double delta_x_robot = delta_distance * std::cos(alpha);
-    double delta_y_robot = delta_distance * std::sin(alpha);
-
+    
+    double alpha_odom = atan2(delta_y_odom, delta_x_odom);
+    double alpha_robot = alpha_odom - last_theta_;
+    double delta_x_robot = delta_distance * std::cos(alpha_robot);
+    double delta_y_robot = delta_distance * std::sin(alpha_robot);
+    
+    double delta_theta_odom = odom_theta - last_theta_;
 
     if (delta_distance > 0.2 || std::abs(delta_theta_odom) > 0.2) {
         if (!last_keypoint_msg_) {
