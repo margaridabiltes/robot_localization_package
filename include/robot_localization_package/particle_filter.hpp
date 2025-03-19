@@ -17,6 +17,7 @@
 #include <tf2/utils.h>
 #include <vector>
 #include <random>
+#include <fstream>
 
 
 #define noise_x_ 0.05
@@ -54,9 +55,12 @@ private:
 
     
     //pf
+    std::ofstream log_file_;
+
     double num_particles_; 
     std::vector<Particle> particles_;
 
+    bool resample_flag_ = false;
 
     void initializeParticles();
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);

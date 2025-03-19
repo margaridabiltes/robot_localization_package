@@ -217,10 +217,10 @@ double ParticleFilter::computeSensorNoise(double distance) {
     double max_distance = 1.5; 
 
     // Quadratic noise model (better fit for real-world LIDAR)
-    double noise = min_noise + (max_noise - min_noise) * (distance * distance / (max_distance * max_distance));
+    //double noise = min_noise + (max_noise - min_noise) * (distance * distance / (max_distance * max_distance));
 
     //linear noise model
-    //double noise = min_noise + (max_noise - min_noise) * (distance / max_distance);
+    double noise = min_noise + (max_noise - min_noise) * (distance / max_distance);
 
     //std::cout<<"Noise: "<<noise<<std::endl;
 
@@ -360,6 +360,11 @@ void ParticleFilter::initializeParticles() {
     std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
 
+    log_file_.open("log_pf.txt", std::ios::app);
+    if (!log_file_.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open log file for writing.");
+        return;
+    }
     particles_.resize(num_particles_);
     for (auto &p : particles_) {
         p.x = dist_x(generator_);
@@ -369,8 +374,9 @@ void ParticleFilter::initializeParticles() {
         p.init_x = p.x;
         p.init_y = p.y;
         p.init_theta = p.theta;
-    }
-    RCLCPP_INFO(this->get_logger(), "Initialized %f particles across map.", num_particles_);
+    } 
+
+    RCLCPP_INFO(this->get_logger(), "Initialized %f particles", num_particles_);
 }
 
 void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
@@ -440,6 +446,8 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         return;
     }
 
+    //i want to write to a file the comments
+
     // Extract observed features from the PointCloud2 message
     std::vector<std::pair<double, double>> observed_features;
     sensor_msgs::PointCloud2Iterator<float> iter_x(*msg, "x");
@@ -454,9 +462,15 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
         i++;
         double likelihood = 1.0;  
         std::cout<<"particle "<<i<<":"<<"x:"<<p.x<<"y:"<<p.y<<std::endl;
+        log_file_<<"particle "<<i<<":"<<"x:"<<p.x<<"y:"<<p.y<<"/n";
         for (const auto &obs : observed_features) {
 
             double distance = std::hypot(obs.first, obs.second);
+
+            std::cout<<"obs: "<<obs.first<<" "<<obs.second<<std::endl;
+            log_file_<<"obs: "<<obs.first<<" "<<obs.second<<"\n";
+            std::cout<<"distance: "<<distance<<std::endl;
+            log_file_<<"distance: "<<distance<<"\n";
             double adaptive_noise = computeSensorNoise(distance);
             //std::<double> measurement_noise(-adaptive_noise, adaptive_noise);
             std::normal_distribution<double> measurement_noise(0, adaptive_noise);
@@ -468,11 +482,12 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(noisy_x - exp.first, noisy_y - exp.second);
-                std::cout<<"dist: "<<dist<<std::endl;
+                //std::cout<<"dist: "<<dist<<std::endl;
                 min_dist = std::min(min_dist, dist);
             }
-            double p=std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise));
+            double p=(std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise)))/std::sqrt(2 * M_PI * adaptive_noise * adaptive_noise);
             std::cout<<"p: "<<p<<std::endl;
+            log_file_<<"p: "<<p<<"\n";
             likelihood += p ;
         }
     
@@ -487,9 +502,16 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
   
     normalizeWeights();
 
-    resampleParticles(ResamplingAmount::MAX_WEIGHT, ResamplingMethod::RESIDUAL); 
+
+    resampleParticles(ResamplingAmount::ESS, ResamplingMethod::RESIDUAL); 
     
-    replaceWorstParticles(0.05);
+    if(resample_flag_==false){
+        replaceWorstParticles(0.05);
+
+    }
+    else{
+        resample_flag_=false;
+    }
 
 }
 
@@ -500,6 +522,7 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
     }
 
     std::cout<<"Max weight: "<<maxWeight()<<std::endl;
+    log_file_<<"Max weight: "<<maxWeight()<<"\n";
 
     double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
     [](double sum, const Particle &p) { return sum + (p.weight * p.weight); });
@@ -522,6 +545,8 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
             }
             break;
     }
+
+    resample_flag_=true;
 
     switch (method) {
         case ResamplingMethod::MULTINOMIAL:
