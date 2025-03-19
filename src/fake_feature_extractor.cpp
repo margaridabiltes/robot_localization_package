@@ -3,7 +3,7 @@
 KeypointDetector::KeypointDetector() 
     : Node("keypoint_detector"), tf_buffer_(get_clock()), tf_listener_(tf_buffer_) {
     
-    keypoints_ = {{-0.75, 0.75} , {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}};
+    keypoints_ = {{-0.75, 0.75}  , {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}/* , {-0.265062, 0.13},{-0.115895, -0.36},{0.44, 0.12},{0.29726, -0.29},{-0.158467 ,0.26}  */};
 
     keypoint_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/keypoints", 10);
 

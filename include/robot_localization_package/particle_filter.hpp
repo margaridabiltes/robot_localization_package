@@ -42,6 +42,12 @@ private:
         SYSTEMATIC,
         RESIDUAL
     };
+
+    enum class ResamplingAmount {
+        ESS,
+        MAX_WEIGHT
+    };
+
     
     std::default_random_engine generator_;
     double sensor_noise_ = 0.5; 
@@ -55,7 +61,7 @@ private:
     void initializeParticles();
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
     void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void resampleParticles(ResamplingMethod method);
+    void resampleParticles(ResamplingAmount type,ResamplingMethod method);
     void computeEstimatedPose();
     void publishEstimatedPose();
     void publishParticles();

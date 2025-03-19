@@ -92,7 +92,7 @@ void ParticleFilter::publishParticles() {
     visualization_msgs::msg::MarkerArray marker_array;
 
     double max_weight = maxWeight();
-    //std::cout << "max_weight: " << max_weight << std::endl;
+    //std::cout << "max_weight no publish: " << max_weight << std::endl;
 
     int i = 0;
     for (const auto &p : particles_) {
@@ -184,27 +184,28 @@ void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::S
 }
 
 std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
+    // Define the map features
     std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75} , {0.75, 0.75} , {0.75, -0.75}, {-0.75, -0.75}  
+        {-0.75, 0.75}, {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}
     };
 
     std::vector<std::pair<double, double>> features_particle;
 
-    tf2::Transform transform;
-    transform.setOrigin(tf2::Vector3(p.x, p.y, 0.0));
-    tf2::Quaternion q;
-    q.setRPY(0, 0, p.theta);
-    transform.setRotation(q);
-
-    tf2::Transform inverse_transform = transform.inverse();
+    // Precompute trigonometric values for the particle's orientation
+    double cos_theta = std::cos(p.theta);
+    double sin_theta = std::sin(p.theta);
 
     for (const auto &f : features_map) {
-        tf2::Vector3 point_map(f.first, f.second, 0.0);
+        // Extract the map feature coordinates
+        double map_x = f.first;
+        double map_y = f.second;
 
         // Transform the point to the particle's frame
-        tf2::Vector3 point_particle = inverse_transform * point_map;
+        double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
+        double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
 
-        features_particle.emplace_back(point_particle.x(), point_particle.y());
+        // Add the transformed feature to the result
+        features_particle.emplace_back(particle_x, particle_y);
     }
 
     return features_particle;
@@ -217,6 +218,11 @@ double ParticleFilter::computeSensorNoise(double distance) {
 
     // Quadratic noise model (better fit for real-world LIDAR)
     double noise = min_noise + (max_noise - min_noise) * (distance * distance / (max_distance * max_distance));
+
+    //linear noise model
+    //double noise = min_noise + (max_noise - min_noise) * (distance / max_distance);
+
+    //std::cout<<"Noise: "<<noise<<std::endl;
 
     return std::min(std::max(noise, min_noise), max_noise);
 }
@@ -442,17 +448,18 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     for (; iter_x != iter_x.end(); ++iter_x, ++iter_y) {
         observed_features.emplace_back(*iter_x, *iter_y);
     }
-
+    int i=0;
     for (auto &p : particles_) {
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
-    
-        double likelihood = 0.0;  
+        i++;
+        double likelihood = 1.0;  
+        std::cout<<"particle "<<i<<":"<<"x:"<<p.x<<"y:"<<p.y<<std::endl;
         for (const auto &obs : observed_features) {
 
             double distance = std::hypot(obs.first, obs.second);
             double adaptive_noise = computeSensorNoise(distance);
-            std::uniform_real_distribution<double> measurement_noise(-adaptive_noise, adaptive_noise);
-
+            //std::<double> measurement_noise(-adaptive_noise, adaptive_noise);
+            std::normal_distribution<double> measurement_noise(0, adaptive_noise);
             double min_dist = std::numeric_limits<double>::max();
             
             // Apply noise to the measurement
@@ -461,45 +468,60 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     
             for (const auto &exp : expected_features) {
                 double dist = std::hypot(noisy_x - exp.first, noisy_y - exp.second);
+                std::cout<<"dist: "<<dist<<std::endl;
                 min_dist = std::min(min_dist, dist);
             }
-            
-            likelihood += std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise));  
+            double p=std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise));
+            std::cout<<"p: "<<p<<std::endl;
+            likelihood += p ;
         }
     
         p.weight *= likelihood;     
     }
     
-    
     for ( auto &p : particles_){
         if(p.x > 0.75 || p.x < -0.75 || p.y > 0.75 || p.y < -0.75){
             p.weight =p.weight/ 2;
         }
-    } 
+    }   
   
     normalizeWeights();
 
-    resampleParticles(ResamplingMethod::RESIDUAL); 
+    resampleParticles(ResamplingAmount::MAX_WEIGHT, ResamplingMethod::RESIDUAL); 
     
     replaceWorstParticles(0.05);
 
 }
 
-void ParticleFilter::resampleParticles(ResamplingMethod method) {
+void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod method) {
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to resample.");
         return;
     }
 
+    std::cout<<"Max weight: "<<maxWeight()<<std::endl;
+
     double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
     [](double sum, const Particle &p) { return sum + (p.weight * p.weight); });
 
-    std::cout << "ESS: " << ess << std::endl;
+    std::cout<<"ESS: "<<ess<<std::endl;
 
-    if (ess > num_particles_ * 0.5) {
-        RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
-        return;
-    }  
+    double max_weight = maxWeight();
+
+    switch(type){
+        case ResamplingAmount::ESS:
+            if (ess > num_particles_ * 0.5) {
+                RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
+                return;
+            }
+            break;
+        case ResamplingAmount::MAX_WEIGHT:
+            if (max_weight < 4/num_particles_) {
+                RCLCPP_INFO(this->get_logger(), "Skipping resampling, max weight is high.");
+                return;
+            }
+            break;
+    }
 
     switch (method) {
         case ResamplingMethod::MULTINOMIAL:
@@ -527,7 +549,24 @@ void ParticleFilter::resampleParticles(ResamplingMethod method) {
         injectRandomParticles(0.1);
         iterationCounter=0;
     } 
+
+    std::cout<<"max weight end resample"<<maxWeight()<<std::endl;
+     
+
+    //add some noise to the particles
+    std::uniform_real_distribution<double> noise_x(-noise_x_, noise_x_);
+    std::uniform_real_distribution<double> noise_y(-noise_y_, noise_y_);
+    std::uniform_real_distribution<double> noise_theta(-noise_theta_, noise_theta_);
     
+    /* for(auto &p : particles_){
+        p.x += noise_x(generator_);
+        p.y += noise_y(generator_);
+        p.theta += noise_theta(generator_);
+
+        if (p.theta > M_PI) p.theta -= 2 * M_PI;
+        if (p.theta < -M_PI) p.theta += 2 * M_PI;
+    } */
+
 }
 
 void ParticleFilter::computeEstimatedPose(){
