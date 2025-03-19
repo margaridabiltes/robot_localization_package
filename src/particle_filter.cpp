@@ -460,16 +460,13 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     for (auto &p : particles_) {
         std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
         i++;
-        double likelihood = 1.0;  
-        std::cout<<"particle "<<i<<":"<<"x:"<<p.x<<"y:"<<p.y<<std::endl;
+        double likelihood = 0;  
         log_file_<<"particle "<<i<<":"<<"x:"<<p.x<<"y:"<<p.y<<"/n";
         for (const auto &obs : observed_features) {
 
             double distance = std::hypot(obs.first, obs.second);
 
-            std::cout<<"obs: "<<obs.first<<" "<<obs.second<<std::endl;
             log_file_<<"obs: "<<obs.first<<" "<<obs.second<<"\n";
-            std::cout<<"distance: "<<distance<<std::endl;
             log_file_<<"distance: "<<distance<<"\n";
             double adaptive_noise = computeSensorNoise(distance);
             //std::<double> measurement_noise(-adaptive_noise, adaptive_noise);
@@ -486,7 +483,6 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
                 min_dist = std::min(min_dist, dist);
             }
             double p=(std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise)))/std::sqrt(2 * M_PI * adaptive_noise * adaptive_noise);
-            std::cout<<"p: "<<p<<std::endl;
             log_file_<<"p: "<<p<<"\n";
             likelihood += p ;
         }
@@ -503,7 +499,7 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     normalizeWeights();
 
 
-    resampleParticles(ResamplingAmount::ESS, ResamplingMethod::RESIDUAL); 
+    resampleParticles(ResamplingAmount::MAX_WEIGHT, ResamplingMethod::RESIDUAL); 
     
     if(resample_flag_==false){
         replaceWorstParticles(0.05);
@@ -571,7 +567,7 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     if(iterationCounter == MAX_ITERATION){
         std::cout<<"Injecting particles"<<std::endl;
-        injectRandomParticles(0.1);
+        injectRandomParticles(0.2);
         iterationCounter=0;
     } 
 
