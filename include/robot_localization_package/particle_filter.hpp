@@ -33,8 +33,57 @@ public:
 private:
     struct Particle {
         double x, y, theta; 
-        double init_x, init_y, init_theta;
         double weight;      
+    };
+
+    struct Feature {
+        double x, y;  
+        double theta; 
+    
+        Feature(double x, double y, double theta = 0) : x(x), y(y), theta(theta) {}
+    };
+
+    struct FeatureCorner : public Feature {
+        FeatureCorner(double x, double y, double theta) 
+            : Feature(x, y, theta) {}
+    };
+
+    struct FeatureSquare : public Feature {
+        double side_length;
+        double theta;
+
+        FeatureSquare(double x, double y, double side_length, double rotation_ccw_degrees) 
+        : Feature(x, y), side_length(side_length), theta(rotation_ccw_degrees)  {}
+
+        std::pair<double, double> getClosestCorner(double obs_x, double obs_y) {
+            std::vector<std::pair<double, double>> unrotated_corners = {
+                {(x - side_length / 2), y + side_length / 2},
+                {x + side_length / 2, y + side_length / 2},
+                {x + side_length / 2, y - side_length / 2},
+                {x - side_length / 2, y - side_length / 2}
+            };
+            
+            std::vector<std::pair<double, double>> corners;
+            for (const auto& corner : unrotated_corners) {
+                double rotated_x = (corner.first - x) * std::cos(theta) - (corner.second - y) * std::sin(theta) + x;
+                double rotated_y = (corner.first - x) * std::sin(theta) + (corner.second - y) * std::cos(theta) + y;
+                corners.emplace_back(rotated_x, rotated_y);
+            }
+    
+            double min_dist = std::numeric_limits<double>::max();
+            std::pair<double, double> best_corner;
+    
+            for (const auto& corner : corners) {
+                double dist = std::hypot(obs_x - corner.first, obs_y - corner.second);
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    best_corner = corner;
+                }
+            }
+    
+            return best_corner;
+        }
+    
     };
 
     enum class ResamplingMethod {
@@ -52,8 +101,14 @@ private:
     
     std::default_random_engine generator_;
     double sensor_noise_ = 0.5; 
+    double angle_sigma_ = M_PI / 36.0;
 
-    
+    // Feature storage
+    std::vector<FeatureCorner> corner_features;
+    std::vector<FeatureSquare> square_features;
+
+    void initializeFeatures();
+
     //pf
     std::ofstream log_file_;
 
@@ -95,7 +150,9 @@ private:
     void injectRandomParticles(double percentage);
     double computeSensorNoise(double distance);
     void storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    std::vector<std::pair<double, double>> getExpectedFeatures(const Particle &p);
+    std::vector<ParticleFilter::FeatureCorner> getExpectedFeatures(const Particle &p);
+    double transformAngleToParticleFrame(double feature_theta_map, double particle_theta);
+    double computeAngleLikelihood(double measured_angle, double expected_angle, double sigma);
 
     double iterationCounter;
     bool first_update_ = true;  

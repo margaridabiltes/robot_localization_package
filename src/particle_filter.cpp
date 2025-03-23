@@ -5,6 +5,8 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_keypoint_msg_(nullptr)
 {
+    initializeFeatures();
+
     std::cout << "ParticleFilter Constructor START" << std::endl;  
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
@@ -40,6 +42,19 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 //! auxiliar functions start!//
 
 #pragma region auxiliar functions
+void ParticleFilter::initializeFeatures(){
+    corner_features.emplace_back(-0.75, 0.75, -45*M_PI/180); 
+    corner_features.emplace_back(0.75, 0.75, -135*M_PI/180);          
+    corner_features.emplace_back(0.75, -0.75, 135*M_PI/180); 
+    corner_features.emplace_back(-0.75, -0.75, 45*M_PI/180);
+    
+    square_features.emplace_back(-0.265062, 0.1,0,0);
+    square_features.emplace_back(-0.115895, 0.1,0,0);
+    square_features.emplace_back(0.44,0.1,0,0);
+    square_features.emplace_back(0.29726, 0.1,0,0);
+    square_features.emplace_back(-0.158467,0.1,0,0);
+
+}
 
 void ParticleFilter::normalizeWeights(){
     double sum_weights = 0;
@@ -183,32 +198,36 @@ void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::S
     last_keypoint_msg_ = msg;  
 }
 
-std::vector<std::pair<double, double>> ParticleFilter::getExpectedFeatures(const Particle &p) {
-    // Define the map features
-    std::vector<std::pair<double, double>> features_map = {
-        {-0.75, 0.75}, {0.75, 0.75}, {0.75, -0.75}, {-0.75, -0.75}
-    };
+std::vector<ParticleFilter::FeatureCorner> ParticleFilter::getExpectedFeatures(const Particle &p) {
 
-    std::vector<std::pair<double, double>> features_particle;
+    std::vector<FeatureCorner> features_particle;
 
-    // Precompute trigonometric values for the particle's orientation
     double cos_theta = std::cos(p.theta);
     double sin_theta = std::sin(p.theta);
 
-    for (const auto &f : features_map) {
-        // Extract the map feature coordinates
-        double map_x = f.first;
-        double map_y = f.second;
+    
+    for(const auto &f: corner_features){
+        double map_x = f.x;
+        double map_y = f.y;
+        double corner_theta = f.theta; 
 
-        // Transform the point to the particle's frame
         double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
         double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
 
-        // Add the transformed feature to the result
-        features_particle.emplace_back(particle_x, particle_y);
-    }
+        features_particle.emplace_back(particle_x, particle_y, corner_theta);
 
+    }
+    
     return features_particle;
+}
+
+double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, double particle_theta) {
+    double angle = feature_theta_map - particle_theta;
+
+    while (angle > M_PI) angle -= 2 * M_PI;
+    while (angle < -M_PI) angle += 2 * M_PI;
+
+    return angle;
 }
 
 double ParticleFilter::computeSensorNoise(double distance) {
@@ -225,6 +244,19 @@ double ParticleFilter::computeSensorNoise(double distance) {
     //std::cout<<"Noise: "<<noise<<std::endl;
 
     return std::min(std::max(noise, min_noise), max_noise);
+}
+
+double ParticleFilter::computeAngleLikelihood(double measured_angle, double expected_angle, double sigma) {
+
+    double error = measured_angle - expected_angle;
+
+    while (error > M_PI) error -= 2 * M_PI;
+    while (error < -M_PI) error += 2 * M_PI;
+
+    double coeff = 1.0 / std::sqrt(2.0 * M_PI * sigma * sigma);
+    double exponent = -0.5 * (error * error) / (sigma * sigma);
+
+    return coeff * std::exp(exponent);
 }
 
 
@@ -353,6 +385,9 @@ void ParticleFilter::residualResample() {
 
 void ParticleFilter::initializeParticles() {
 
+    //create the 4 corners and the 5 objects
+
+
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
@@ -371,9 +406,6 @@ void ParticleFilter::initializeParticles() {
         p.y = dist_y(generator_);
         p.theta = dist_theta(generator_);
         p.weight = 1.0 / num_particles_;
-        p.init_x = p.x;
-        p.init_y = p.y;
-        p.init_theta = p.theta;
     } 
 
     RCLCPP_INFO(this->get_logger(), "Initialized %f particles", num_particles_);
@@ -458,33 +490,47 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
     }
     int i=0;
     for (auto &p : particles_) {
-        std::vector<std::pair<double, double>> expected_features = getExpectedFeatures(p);
+        std::vector<FeatureCorner> expected_features = getExpectedFeatures(p);
         i++;
         double likelihood = 0;  
-        log_file_<<"particle "<<i<<":"<<"x:"<<p.x<<"y:"<<p.y<<"/n";
+        log_file_ << "particle " << i << ": x=" << p.x << ", y=" << p.y << "\n";
         for (const auto &obs : observed_features) {
 
             double distance = std::hypot(obs.first, obs.second);
 
             log_file_<<"obs: "<<obs.first<<" "<<obs.second<<"\n";
             log_file_<<"distance: "<<distance<<"\n";
+
             double adaptive_noise = computeSensorNoise(distance);
-            //std::<double> measurement_noise(-adaptive_noise, adaptive_noise);
+
             std::normal_distribution<double> measurement_noise(0, adaptive_noise);
             double min_dist = std::numeric_limits<double>::max();
+            double min_angle= 360*M_PI/180;
             
             // Apply noise to the measurement
-            double noisy_x = obs.first   + measurement_noise(generator_)  ;
-            double noisy_y = obs.second   + measurement_noise(generator_)  ;
+            double noisy_x = obs.first + measurement_noise(generator_);
+            double noisy_y = obs.second + measurement_noise(generator_);
+
+            FeatureCorner best_corner(0, 0, 0);
     
             for (const auto &exp : expected_features) {
-                double dist = std::hypot(noisy_x - exp.first, noisy_y - exp.second);
-                //std::cout<<"dist: "<<dist<<std::endl;
-                min_dist = std::min(min_dist, dist);
+                double dist = std::hypot(noisy_x - exp.x, noisy_y - exp.y);
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    best_corner = exp; 
+                }
             }
-            double p=(std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise)))/std::sqrt(2 * M_PI * adaptive_noise * adaptive_noise);
-            log_file_<<"p: "<<p<<"\n";
-            likelihood += p ;
+
+            double expected_feature_angle = transformAngleToParticleFrame(best_corner.theta, p.theta);
+
+            double measured_angle = 0/* angle that came from sensor for that feature */;
+
+            double angle_likelihood = computeAngleLikelihood(measured_angle, expected_feature_angle, angle_sigma_);
+
+            double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise)))/std::sqrt(2 * M_PI * adaptive_noise * adaptive_noise);
+            
+            likelihood += (angle_likelihood * distance_likelihood);
+            log_file_<<"likelihood: "<<likelihood<<"\n";
         }
     
         p.weight *= likelihood;     
