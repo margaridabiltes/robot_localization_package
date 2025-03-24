@@ -42,10 +42,10 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
 #pragma region auxiliar functions
 void ParticleFilter::initializeFeatures(){
-    //corner_features.emplace_back(-0.75, 0.75, -45*M_PI/180); 
-     corner_features.emplace_back(0.75, 0.75, -135*M_PI/180);          
-    /*corner_features.emplace_back(0.75, -0.75, 135*M_PI/180); 
-    corner_features.emplace_back(-0.75, -0.75, 45*M_PI/180); */
+    corner_features.emplace_back(-0.75, 0.75, -45*M_PI/180); 
+    corner_features.emplace_back(0.75, 0.75, -135*M_PI/180);          
+    corner_features.emplace_back(0.75, -0.75, 135*M_PI/180); 
+    corner_features.emplace_back(-0.75, -0.75, 45*M_PI/180); 
     
   /*   square_features.emplace_back(-0.265062, 0.1,0,0);
     square_features.emplace_back(-0.115895, 0.1,0,0);

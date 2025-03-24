@@ -169,7 +169,7 @@ private:
     double iterationCounter;
     bool first_update_ = true;  
 
-    bool with_angle_ = false;
+    bool with_angle_ = true;
 
     double last_x_, last_y_, last_theta_;
     double x_last_final = 0.0;
