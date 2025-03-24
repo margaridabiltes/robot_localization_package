@@ -15,6 +15,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp> 
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/utils.h>
+#include "robot_msgs/msg/feature.hpp"
+#include "robot_msgs/msg/feature_array.hpp"
 #include <vector>
 #include <random>
 #include <fstream>
@@ -86,6 +88,15 @@ private:
     
     };
 
+    struct DecodedMsg {
+        double x;
+        double y;
+        double theta;  
+        std::string type;
+        std::array<std::array<double, 3>, 3> covariance_pos;
+        std::array<std::array<double, 3>, 3> covariance_angle;
+    };
+    
     enum class ResamplingMethod {
         MULTINOMIAL,
         STRATIFIED,
@@ -119,21 +130,24 @@ private:
 
     void initializeParticles();
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
-    void measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+    void measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg);
     void resampleParticles(ResamplingAmount type,ResamplingMethod method);
     void computeEstimatedPose();
     void publishEstimatedPose();
+   
     void publishParticles();
+    void replaceWorstParticles(double percentage);
+    void injectRandomParticles(double percentage);
 
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr particles_pub_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keypoint_sub_;
+    rclcpp::Subscription<robot_msgs::msg::FeatureArray>::SharedPtr feature_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::TimerBase::SharedPtr timer_pose_;
 
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
-    sensor_msgs::msg::PointCloud2::SharedPtr last_keypoint_msg_; 
+    robot_msgs::msg::FeatureArray::SharedPtr last_map_msg_; 
     nav_msgs::msg::Odometry::SharedPtr msg_odom_base_link_;
 
 
@@ -146,16 +160,16 @@ private:
     //aux    
     void normalizeWeights();
     double maxWeight();
-    void replaceWorstParticles(double percentage);
-    void injectRandomParticles(double percentage);
-    double computeSensorNoise(double distance);
-    void storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+    void storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg);
     std::vector<ParticleFilter::FeatureCorner> getExpectedFeatures(const Particle &p);
     double transformAngleToParticleFrame(double feature_theta_map, double particle_theta);
     double computeAngleLikelihood(double measured_angle, double expected_angle, double sigma);
+    ParticleFilter::DecodedMsg decodeMsg(const robot_msgs::msg::Feature& msg);
 
     double iterationCounter;
     bool first_update_ = true;  
+
+    bool with_angle_ = false;
 
     double last_x_, last_y_, last_theta_;
     double x_last_final = 0.0;

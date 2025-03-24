@@ -3,23 +3,22 @@
 
 ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000),
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
-    msg_odom_base_link_(nullptr), last_keypoint_msg_(nullptr)
+    msg_odom_base_link_(nullptr), last_map_msg_(nullptr)
 {
     initializeFeatures();
 
     std::cout << "ParticleFilter Constructor START" << std::endl;  
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
-    keypoint_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/keypoints", 10, 
-        std::bind(&ParticleFilter::storeKeypointMessage, this, std::placeholders::_1)  
-    );
+    feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
+        "/corner", 10,
+        std::bind(&ParticleFilter::storeMapMessage, this, std::placeholders::_1)
+    );    
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
         std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
     );
-
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
     particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/markers", 10);
@@ -27,7 +26,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
     //timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
 
-    while (rclcpp::ok() && !last_keypoint_msg_) {
+    while (rclcpp::ok() && !last_map_msg_) {
         RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
         rclcpp::spin_some(this->get_node_base_interface());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -43,17 +42,16 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
 #pragma region auxiliar functions
 void ParticleFilter::initializeFeatures(){
-    corner_features.emplace_back(-0.75, 0.75, -45*M_PI/180); 
-    corner_features.emplace_back(0.75, 0.75, -135*M_PI/180);          
-    corner_features.emplace_back(0.75, -0.75, 135*M_PI/180); 
-    corner_features.emplace_back(-0.75, -0.75, 45*M_PI/180);
+    //corner_features.emplace_back(-0.75, 0.75, -45*M_PI/180); 
+     corner_features.emplace_back(0.75, 0.75, -135*M_PI/180);          
+    /*corner_features.emplace_back(0.75, -0.75, 135*M_PI/180); 
+    corner_features.emplace_back(-0.75, -0.75, 45*M_PI/180); */
     
-    square_features.emplace_back(-0.265062, 0.1,0,0);
+  /*   square_features.emplace_back(-0.265062, 0.1,0,0);
     square_features.emplace_back(-0.115895, 0.1,0,0);
     square_features.emplace_back(0.44,0.1,0,0);
     square_features.emplace_back(0.29726, 0.1,0,0);
-    square_features.emplace_back(-0.158467,0.1,0,0);
-
+    square_features.emplace_back(-0.158467,0.1,0,0); */
 }
 
 void ParticleFilter::normalizeWeights(){
@@ -194,8 +192,8 @@ void ParticleFilter::injectRandomParticles(double percentage){
 
 }
 
-void ParticleFilter::storeKeypointMessage(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-    last_keypoint_msg_ = msg;  
+void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg) {
+    last_map_msg_ = msg;  
 }
 
 std::vector<ParticleFilter::FeatureCorner> ParticleFilter::getExpectedFeatures(const Particle &p) {
@@ -230,22 +228,6 @@ double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, d
     return angle;
 }
 
-double ParticleFilter::computeSensorNoise(double distance) {
-    double min_noise = 0.04;
-    double max_noise = 0.4;  
-    double max_distance = 1.5; 
-
-    // Quadratic noise model (better fit for real-world LIDAR)
-    //double noise = min_noise + (max_noise - min_noise) * (distance * distance / (max_distance * max_distance));
-
-    //linear noise model
-    double noise = min_noise + (max_noise - min_noise) * (distance / max_distance);
-
-    //std::cout<<"Noise: "<<noise<<std::endl;
-
-    return std::min(std::max(noise, min_noise), max_noise);
-}
-
 double ParticleFilter::computeAngleLikelihood(double measured_angle, double expected_angle, double sigma) {
 
     double error = measured_angle - expected_angle;
@@ -257,6 +239,33 @@ double ParticleFilter::computeAngleLikelihood(double measured_angle, double expe
     double exponent = -0.5 * (error * error) / (sigma * sigma);
 
     return coeff * std::exp(exponent);
+}
+
+ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feature& msg){
+    DecodedMsg feature;
+    
+    feature.x = msg.position.x;
+    feature.y = msg.position.y;
+    feature.type = msg.type;
+
+    tf2::Quaternion q(
+        msg.orientation.x,
+        msg.orientation.y,
+        msg.orientation.z,
+        msg.orientation.w
+    );
+    double roll, pitch, yaw;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+    feature.theta = yaw; 
+
+    for (size_t i = 0; i < 3; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            feature.covariance_pos[i][j] = msg.position_covariance[i * 3 + j];
+            feature.covariance_angle[i][j] = msg.orientation_covariance[i * 3 + j];
+        }
+    }
+
+    return feature;
 }
 
 
@@ -385,9 +394,6 @@ void ParticleFilter::residualResample() {
 
 void ParticleFilter::initializeParticles() {
 
-    //create the 4 corners and the 5 objects
-
-
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
@@ -447,7 +453,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_theta_odom = odom_theta - last_theta_;
 
     if (delta_distance > 0.2 || std::abs(delta_theta_odom) > 0.2) {
-        if (!last_keypoint_msg_) {
+        if (!last_map_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
         }
@@ -466,50 +472,45 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         last_y_ = odom_y;
         last_theta_ = odom_theta;
         
-        measurementUpdate(last_keypoint_msg_);
+        measurementUpdate(last_map_msg_);
     }
 
     publishParticles();
 }
 
-void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg){
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
 
-    //i want to write to a file the comments
-
-    // Extract observed features from the PointCloud2 message
-    std::vector<std::pair<double, double>> observed_features;
-    sensor_msgs::PointCloud2Iterator<float> iter_x(*msg, "x");
-    sensor_msgs::PointCloud2Iterator<float> iter_y(*msg, "y");
-
-    for (; iter_x != iter_x.end(); ++iter_x, ++iter_y) {
-        observed_features.emplace_back(*iter_x, *iter_y);
-    }
-    int i=0;
     for (auto &p : particles_) {
         std::vector<FeatureCorner> expected_features = getExpectedFeatures(p);
-        i++;
         double likelihood = 0;  
-        log_file_ << "particle " << i << ": x=" << p.x << ", y=" << p.y << "\n";
-        for (const auto &obs : observed_features) {
 
-            double distance = std::hypot(obs.first, obs.second);
+        for (const auto &obs_msg : msg->features) {
 
-            log_file_<<"obs: "<<obs.first<<" "<<obs.second<<"\n";
-            log_file_<<"distance: "<<distance<<"\n";
+            DecodedMsg obs = decodeMsg(obs_msg);
 
-            double adaptive_noise = computeSensorNoise(distance);
+            double distance = std::hypot(obs.x, obs.y);
 
-            std::normal_distribution<double> measurement_noise(0, adaptive_noise);
-            double min_dist = std::numeric_limits<double>::max();
-            double min_angle= 360*M_PI/180;
+            double sigma_x = std::sqrt(obs.covariance_pos[0][0]);  
+            double sigma_y = std::sqrt(obs.covariance_pos[1][1]); 
+            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]);  
+            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y) / 2.0);
+
+            std::normal_distribution<double> measurement_noise(0, sigma_pos);
+            std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
+            std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
+            std::normal_distribution<double> noise_theta(0.0, sigma_theta);
             
-            // Apply noise to the measurement
-            double noisy_x = obs.first + measurement_noise(generator_);
-            double noisy_y = obs.second + measurement_noise(generator_);
+            double measured_theta = obs.theta + noise_theta(generator_);
+
+
+            double min_dist = std::numeric_limits<double>::max();
+            
+            double noisy_x = obs.x + noise_pos_x(generator_);
+            double noisy_y = obs.y + noise_pos_y(generator_);
 
             FeatureCorner best_corner(0, 0, 0);
     
@@ -523,14 +524,16 @@ void ParticleFilter::measurementUpdate(const sensor_msgs::msg::PointCloud2::Shar
 
             double expected_feature_angle = transformAngleToParticleFrame(best_corner.theta, p.theta);
 
-            double measured_angle = 0/* angle that came from sensor for that feature */;
+            double angle_likelihood = computeAngleLikelihood(measured_theta, expected_feature_angle, sigma_theta);
 
-            double angle_likelihood = computeAngleLikelihood(measured_angle, expected_feature_angle, angle_sigma_);
+            double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
 
-            double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * adaptive_noise * adaptive_noise)))/std::sqrt(2 * M_PI * adaptive_noise * adaptive_noise);
-            
-            likelihood += (angle_likelihood * distance_likelihood);
-            log_file_<<"likelihood: "<<likelihood<<"\n";
+            if(with_angle_){
+                likelihood += (angle_likelihood + distance_likelihood);
+            }
+            else{
+                likelihood += distance_likelihood;
+            }
         }
     
         p.weight *= likelihood;     
@@ -616,23 +619,6 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
         injectRandomParticles(0.2);
         iterationCounter=0;
     } 
-
-    std::cout<<"max weight end resample"<<maxWeight()<<std::endl;
-     
-
-    //add some noise to the particles
-    std::uniform_real_distribution<double> noise_x(-noise_x_, noise_x_);
-    std::uniform_real_distribution<double> noise_y(-noise_y_, noise_y_);
-    std::uniform_real_distribution<double> noise_theta(-noise_theta_, noise_theta_);
-    
-    /* for(auto &p : particles_){
-        p.x += noise_x(generator_);
-        p.y += noise_y(generator_);
-        p.theta += noise_theta(generator_);
-
-        if (p.theta > M_PI) p.theta -= 2 * M_PI;
-        if (p.theta < -M_PI) p.theta += 2 * M_PI;
-    } */
 
 }
 
