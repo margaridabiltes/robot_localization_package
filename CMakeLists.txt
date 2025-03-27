@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.5)
 project(robot_localization_package)
 
+# Set C++ standard if not already specified
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 14)
 endif()
 
-# Besides the package specific dependencies we also need the `pluginlib` and `webots_ros2_driver`
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -15,22 +16,28 @@ find_package(webots_ros2_driver REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-find_package(tf2)
+find_package(tf2 REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(robot_msgs REQUIRED)
 
-## Fake feature extractor
-include_directories(
-  include
-)
+# Find yaml-cpp for loading YAML files
+find_package(yaml-cpp REQUIRED)
 
+# Include headers
+include_directories(include)
 
+# ---------------- Particle Filter Node ----------------
 add_executable(particle_filter
   src/particle_filter.cpp
+  src/MapLoader.cpp  # Include MapLoader.cpp
 )
+
+# Include directories for particle_filter
 target_include_directories(particle_filter PRIVATE include)
+
+# Set dependencies for particle_filter
 ament_target_dependencies(particle_filter
   rclcpp
   geometry_msgs
@@ -42,7 +49,15 @@ ament_target_dependencies(particle_filter
   visualization_msgs
   Eigen3
   robot_msgs
+  yaml-cpp  # Link to yaml-cpp
 )
+
+# Link the particle_filter executable to yaml-cpp
+target_link_libraries(particle_filter
+  yaml-cpp  # Ensure the yaml-cpp library is linked
+)
+
+# Install the particle_filter executable
 install(TARGETS
   particle_filter
   DESTINATION lib/${PROJECT_NAME}

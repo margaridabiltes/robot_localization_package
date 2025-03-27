@@ -5,10 +5,12 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_map_msg_(nullptr)
 {
-    initializeFeatures();
-
     std::cout << "ParticleFilter Constructor START" << std::endl;  
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
+
+    // Retrieve the map_features parameter passed from the launch file
+    this->declare_parameter("map_features", std::string(""));
+    this->get_parameter("map_features", map_features_);
 
     feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
         "/corner", 10,
@@ -36,23 +38,23 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     computeColorWeightLookup();
 
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
+
+    map_loader_.loadToGlobalMap(map_features_);
+
+    // Get the global feature map after loading
+    global_features_ = map_loader_.getGlobalFeatureMap();
+
+    //print features
+    for(auto feature : global_features_){
+        std::cout << "Feature: " << feature->x << " " << feature->y << " " << feature->z << " " << feature->theta << " " << feature->type << std::endl;
+    }
+
+
 }
 
 //! auxiliar functions start!//
 
 #pragma region auxiliar functions
-void ParticleFilter::initializeFeatures(){
-    corner_features.emplace_back(-0.75, 0.75, -45*M_PI/180); 
-    corner_features.emplace_back(0.75, 0.75, -135*M_PI/180);          
-    corner_features.emplace_back(0.75, -0.75, 135*M_PI/180); 
-    corner_features.emplace_back(-0.75, -0.75, 45*M_PI/180); 
-    
-  /*   square_features.emplace_back(-0.265062, 0.1,0,0);
-    square_features.emplace_back(-0.115895, 0.1,0,0);
-    square_features.emplace_back(0.44,0.1,0,0);
-    square_features.emplace_back(0.29726, 0.1,0,0);
-    square_features.emplace_back(-0.158467,0.1,0,0); */
-}
 
 void ParticleFilter::normalizeWeights(){
     double sum_weights = 0;
@@ -196,24 +198,30 @@ void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::Shared
     last_map_msg_ = msg;  
 }
 
-std::vector<ParticleFilter::FeatureCorner> ParticleFilter::getExpectedFeatures(const Particle &p) {
+std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeatures(const Particle &p) {
 
-    std::vector<FeatureCorner> features_particle;
+    std::vector<map_features::FeatureCorner> features_particle;
 
     double cos_theta = std::cos(p.theta);
     double sin_theta = std::sin(p.theta);
 
-    
-    for(const auto &f: corner_features){
-        double map_x = f.x;
-        double map_y = f.y;
-        double corner_theta = f.theta; 
+    for (const auto& feature_ptr : global_features_) {
+        if (feature_ptr->type == "corner") {
 
-        double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
-        double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
+            auto corner_ptr = std::dynamic_pointer_cast<map_features::FeatureCorner>(feature_ptr);
+            if (!corner_ptr) continue;
 
-        features_particle.emplace_back(particle_x, particle_y, corner_theta);
+            double map_x = corner_ptr->x;
+            double map_y = corner_ptr->y;
+            double map_z = corner_ptr->z;
+            double corner_theta = corner_ptr->theta;
 
+            double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
+            double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
+            double particle_z = 0;
+
+            features_particle.emplace_back(particle_x, particle_y, particle_z, corner_theta);
+        }
     }
     
     return features_particle;
@@ -485,7 +493,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
 
     for (auto &p : particles_) {
-        std::vector<FeatureCorner> expected_features = getExpectedFeatures(p);
+        std::vector<map_features::FeatureCorner> expected_features = getExpectedFeatures(p);
         double likelihood = 0;  
 
         for (const auto &obs_msg : msg->features) {
@@ -493,6 +501,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             DecodedMsg obs = decodeMsg(obs_msg);
 
             double distance = std::hypot(obs.x, obs.y);
+            //std::cout<<"Distance"<<distance<<std::endl;
 
             double sigma_x = std::sqrt(obs.covariance_pos[0][0]);  
             double sigma_y = std::sqrt(obs.covariance_pos[1][1]); 
@@ -512,13 +521,18 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             double noisy_x = obs.x + noise_pos_x(generator_);
             double noisy_y = obs.y + noise_pos_y(generator_);
 
-            FeatureCorner best_corner(0, 0, 0);
+            map_features::FeatureCorner best_corner(0, 0,0, 0);
     
             for (const auto &exp : expected_features) {
+                //std::cout<<"Exp: "<<exp.x<<" "<<exp.y<<" "<<exp.theta<<std::endl;
+                //if(obs.type != exp.type) continue;
                 double dist = std::hypot(noisy_x - exp.x, noisy_y - exp.y);
+                //std::cout<<"Dist: "<<dist<<std::endl;
                 if (dist < min_dist) {
                     min_dist = dist;
-                    best_corner = exp; 
+                    best_corner = exp;
+                    //print best corner
+                    //std::cout<<"Best corner: "<<best_corner.x<<" "<<best_corner.y<<" "<<best_corner.theta<<std::endl;
                 }
             }
 

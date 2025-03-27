@@ -17,8 +17,9 @@ def generate_launch_description():
 
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
-    world_file = os.path.join(worlds_dir, 'worlds', 'square_no_box.wbt')
+    world_file = os.path.join(worlds_dir, 'worlds', 'square_two_boxes.wbt')
     map_yaml = os.path.join(worlds_dir, 'maps', 'square_no_box.yaml')
+    map_features = os.path.join(worlds_dir, 'feature_maps', 'square_two_boxes.yaml')
     rviz_config = os.path.join(worlds_dir, 'rviz', 'corners_orientation.rviz')
 
     # Webots
@@ -30,20 +31,21 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_urdf}]
     )
 
-    # Particle filter
-    particle_filter = Node(
-        package='robot_localization_package',
-        executable='particle_filter',
-        name='particle_filter',
-        output='screen'
-    )
-
-    # Fake detector
+      # Fake detector
     fake_detector = Node(
         package='robot_worlds',
         executable='fake_detector',
         name='fake_detector',
         output='screen'
+    )
+
+    # Particle filter
+    particle_filter = Node(
+        package='robot_localization_package',
+        executable='particle_filter',
+        name='particle_filter',
+        output='screen',
+        parameters=[{'map_features': map_features}]
     )
 
     # Map server
