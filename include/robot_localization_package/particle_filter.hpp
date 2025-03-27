@@ -73,6 +73,7 @@ private:
 
     std::string map_features_;
 
+    bool new_map=false;
     
     //pf
     std::ofstream log_file_;
@@ -85,6 +86,10 @@ private:
     void initializeParticles();
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
     void measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg);
+
+    double computeLikelihoodCorner(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta);
+    double computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type);
+
     void resampleParticles(ResamplingAmount type,ResamplingMethod method);
     void computeEstimatedPose();
     void publishEstimatedPose();
@@ -115,7 +120,8 @@ private:
     void normalizeWeights();
     double maxWeight();
     void storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg);
-    std::vector<map_features::FeatureCorner> getExpectedFeatures(const Particle &p);
+    std::vector<map_features::FeatureCorner> getExpectedFeaturesCorner(const Particle &p);
+    map_features::FeatureObject getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z);
     double transformAngleToParticleFrame(double feature_theta_map, double particle_theta);
     double computeAngleLikelihood(double measured_angle, double expected_angle, double sigma);
     ParticleFilter::DecodedMsg decodeMsg(const robot_msgs::msg::Feature& msg);

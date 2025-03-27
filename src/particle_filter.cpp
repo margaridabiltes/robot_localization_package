@@ -195,10 +195,11 @@ void ParticleFilter::injectRandomParticles(double percentage){
 }
 
 void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg) {
-    last_map_msg_ = msg;  
+    last_map_msg_ = msg; 
+    new_map = true; 
 }
 
-std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeatures(const Particle &p) {
+std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorner(const Particle &p) {
 
     std::vector<map_features::FeatureCorner> features_particle;
 
@@ -225,6 +226,66 @@ std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeatures(con
     }
     
     return features_particle;
+}
+
+map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z){
+    map_features::FeatureObject closest_object(0, 0, 0, 0, type, {});
+    //compute the center of objects of that type in the particles frame and see which one is is closer to the double_x,y,z
+    double closest_distance = std::numeric_limits<double>::max();
+    for(const auto& feature_ptr : global_features_) {
+        if (feature_ptr->type == type) {
+
+            auto object_ptr = std::dynamic_pointer_cast<map_features::FeatureObject>(feature_ptr);
+            if (!object_ptr) continue;
+
+            double map_x = object_ptr->x;
+            double map_y = object_ptr->y;
+            double map_z = object_ptr->z;
+            double object_theta = object_ptr->theta;
+
+            double particle_x = std::cos(p.theta) * (map_x - p.x) + std::sin(p.theta) * (map_y - p.y);
+            double particle_y = -std::sin(p.theta) * (map_x - p.x) + std::cos(p.theta) * (map_y - p.y);
+            double particle_z = 0;
+
+            double distance = std::hypot(particle_x - x, particle_y - y);
+
+            if(distance < closest_distance){
+                closest_distance = distance;
+                //update the object
+                closest_object.x = particle_x;
+                closest_object.y = particle_y;
+                closest_object.z = particle_z;
+                closest_object.theta = object_theta;
+                closest_object.type = type;
+                closest_object.keypoints = object_ptr->keypoints;
+            }
+        }
+    }
+
+    // Transform the keypoints from the object's local frame to the particle's frame
+    for (auto& kp : closest_object.keypoints) {
+        // Step 1: Rotate the keypoint by the object's orientation (theta)
+        double rotated_x = std::cos(closest_object.theta) * kp.x - std::sin(closest_object.theta) * kp.y;
+        double rotated_y = std::sin(closest_object.theta) * kp.x + std::cos(closest_object.theta) * kp.y;
+
+        // Step 2: Translate the keypoint to the object's center in the particle's frame
+        double object_center_x = closest_object.x;
+        double object_center_y = closest_object.y;
+        double translated_x = rotated_x + object_center_x;
+        double translated_y = rotated_y + object_center_y;
+
+        // Step 3: Transform the keypoint from the object's frame to the particle's frame
+        double transformed_x = std::cos(p.theta) * (translated_x - p.x) + std::sin(p.theta) * (translated_y - p.y);
+        double transformed_y = -std::sin(p.theta) * (translated_x - p.x) + std::cos(p.theta) * (translated_y - p.y);
+        double transformed_z = 0;  // Assuming 2D transformation
+
+        // Update the keypoint with the transformed coordinates
+        kp.x = transformed_x;
+        kp.y = transformed_y;
+        kp.z = transformed_z;
+    }
+
+    return closest_object;
 }
 
 double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, double particle_theta) {
@@ -491,63 +552,48 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
+    
+    if(new_map==false){
+        return;
+    }
+    new_map=false;
 
     for (auto &p : particles_) {
-        std::vector<map_features::FeatureCorner> expected_features = getExpectedFeatures(p);
+        
         double likelihood = 0;  
-
         for (const auto &obs_msg : msg->features) {
 
             DecodedMsg obs = decodeMsg(obs_msg);
 
-            double distance = std::hypot(obs.x, obs.y);
-            //std::cout<<"Distance"<<distance<<std::endl;
-
             double sigma_x = std::sqrt(obs.covariance_pos[0][0]);  
             double sigma_y = std::sqrt(obs.covariance_pos[1][1]); 
-            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]);  
-            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y) / 2.0);
+            double sigma_z = std::sqrt(obs.covariance_pos[2][2]);
+
+            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]); 
+            //ver este sigam_pos 
+            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y + sigma_z*sigma_z) / 3.0);
 
             std::normal_distribution<double> measurement_noise(0, sigma_pos);
             std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
             std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
+            std::normal_distribution<double> noise_pos_z(0.0, sigma_z);
             std::normal_distribution<double> noise_theta(0.0, sigma_theta);
             
             double measured_theta = obs.theta + noise_theta(generator_);
-
-
-            double min_dist = std::numeric_limits<double>::max();
             
             double noisy_x = obs.x + noise_pos_x(generator_);
             double noisy_y = obs.y + noise_pos_y(generator_);
+            double noisy_z = obs.z + noise_pos_z(generator_);
 
-            map_features::FeatureCorner best_corner(0, 0,0, 0);
-    
-            for (const auto &exp : expected_features) {
-                //std::cout<<"Exp: "<<exp.x<<" "<<exp.y<<" "<<exp.theta<<std::endl;
-                //if(obs.type != exp.type) continue;
-                double dist = std::hypot(noisy_x - exp.x, noisy_y - exp.y);
-                //std::cout<<"Dist: "<<dist<<std::endl;
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    best_corner = exp;
-                    //print best corner
-                    //std::cout<<"Best corner: "<<best_corner.x<<" "<<best_corner.y<<" "<<best_corner.theta<<std::endl;
-                }
+            if(obs.type == "corner"){
+                std::cout<<"CORNER"<<std::endl;
+                likelihood+=computeLikelihoodCorner(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta);
+            }
+            else {
+                std::cout<<"OBJECT"<<std::endl;
+                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, type);
             }
 
-            double expected_feature_angle = transformAngleToParticleFrame(best_corner.theta, p.theta);
-
-            double angle_likelihood = computeAngleLikelihood(measured_theta, expected_feature_angle, sigma_theta);
-
-            double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
-
-            if(with_angle_){
-                likelihood += (angle_likelihood + distance_likelihood);
-            }
-            else{
-                likelihood += distance_likelihood;
-            }
         }
     
         p.weight *= likelihood;     
@@ -573,6 +619,46 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
 
 }
+
+double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta) {
+    std::vector<map_features::FeatureCorner> expected_features = getExpectedFeaturesCorner(p);
+
+    double min_dist = std::numeric_limits<double>::max();
+    map_features::FeatureCorner best_corner(0, 0,0, 0);
+
+    double likelihood = 0.0;
+    
+    for (const auto &exp : expected_features) {
+        double dist = std::hypot(noisy_x - exp.x, noisy_y - exp.y);
+        if (dist < min_dist) {
+            min_dist = dist;
+            best_corner = exp;
+        }
+    }
+
+    double expected_feature_angle = transformAngleToParticleFrame(best_corner.theta, p.theta);
+
+    double angle_likelihood = computeAngleLikelihood(measured_theta, expected_feature_angle, sigma_theta);
+
+    double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
+
+    if(with_angle_){
+        likelihood += (angle_likelihood + distance_likelihood);
+    }
+    else{
+        likelihood += distance_likelihood;
+    }
+
+    return likelihood;
+}
+
+double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type){
+    //first see which object of that type is closer
+    map_features::FeatureObject expected_Object = getExpectedFeaturesCloserObject(p, type, noisy_x, noisy_y, noisy_z);
+    
+
+}
+
 
 void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod method) {
     if (particles_.empty()) {

@@ -21,13 +21,18 @@ void MapLoader::loadToGlobalMap(const std::string& yaml_path) {
         if (type == "corner") {
             auto feature = std::make_shared<FeatureCorner>(x, y,z, theta);
             addToGlobalMap(feature);
-        } else if (type == "square") {
-            double side = f["side_length"].as<double>();
-            double rot = f["rotation_deg"].as<double>();
-            auto feature = std::make_shared<FeatureSquare>(x, y,z, theta, side, rot);
-            addToGlobalMap(feature);
         } else {
-            throw std::runtime_error("Unknown feature type: " + type);
+            //get keypoints
+            std::vector<geometry_msgs::msg::Point> keypoints;
+            for (const auto& kp : f["keypoints"]) {
+                geometry_msgs::msg::Point point;
+                point.x = kp["x"].as<double>();
+                point.y = kp["y"].as<double>();
+                point.z = kp["z"].as<double>();
+                keypoints.push_back(point);
+            }
+            auto feature = std::make_shared<FeatureObject>(x, y, z, theta, type, keypoints);
+            addToGlobalMap(feature);
         }
     }
 }

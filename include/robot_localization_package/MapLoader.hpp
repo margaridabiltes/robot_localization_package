@@ -7,6 +7,8 @@
 #include <yaml-cpp/yaml.h>
 
 #include "FeatureStruct.hpp"
+#include <geometry_msgs/msg/point.hpp> 
+
 
 namespace map_features {
 

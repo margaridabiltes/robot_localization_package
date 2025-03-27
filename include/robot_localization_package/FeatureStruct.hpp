@@ -2,6 +2,9 @@
 
 #include <string>
 #include <memory>
+#include <vector>
+#include <geometry_msgs/msg/point.hpp> 
+
 
 namespace map_features {
 
@@ -24,14 +27,11 @@ struct FeatureCorner : public Feature {
 };
 
 
-struct FeatureSquare : public Feature {
-    double side_length;
-    double rotation_deg;  
+struct FeatureObject : public Feature {
+    std::vector<geometry_msgs::msg::Point> keypoints; 
 
-    FeatureSquare(double x_, double y_, double z_, double theta_, double side_length_, double rotation_deg_)
-        : Feature(x_, y_,z_, theta_, "square"),
-          side_length(side_length_),
-          rotation_deg(rotation_deg_) {}
+    FeatureObject(double x_, double y_, double z_, double theta_, const std::string& type_, const std::vector<geometry_msgs::msg::Point>& keypoints_)
+        : Feature(x_, y_, z_, theta_, type_), keypoints(keypoints_) {}
 };
 
 using FeaturePtr = std::shared_ptr<Feature>;
