@@ -262,31 +262,36 @@ map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(cons
         }
     }
 
-    // Transform the keypoints from the object's local frame to the particle's frame
-    for (auto& kp : closest_object.keypoints) {
-        // Step 1: Rotate the keypoint by the object's orientation (theta)
-        double rotated_x = std::cos(closest_object.theta) * kp.x - std::sin(closest_object.theta) * kp.y;
-        double rotated_y = std::sin(closest_object.theta) * kp.x + std::cos(closest_object.theta) * kp.y;
-
-        // Step 2: Translate the keypoint to the object's center in the particle's frame
-        double object_center_x = closest_object.x;
-        double object_center_y = closest_object.y;
-        double translated_x = rotated_x + object_center_x;
-        double translated_y = rotated_y + object_center_y;
-
-        // Step 3: Transform the keypoint from the object's frame to the particle's frame
-        double transformed_x = std::cos(p.theta) * (translated_x - p.x) + std::sin(p.theta) * (translated_y - p.y);
-        double transformed_y = -std::sin(p.theta) * (translated_x - p.x) + std::cos(p.theta) * (translated_y - p.y);
-        double transformed_z = 0;  // Assuming 2D transformation
-
-        // Update the keypoint with the transformed coordinates
-        kp.x = transformed_x;
-        kp.y = transformed_y;
-        kp.z = transformed_z;
-    }
-
     return closest_object;
 }
+
+std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(std::vector<geometry_msgs::msg::Point> keypoints, double  x_base, double y_base, double z_base, double theta_base, double x_new, double y_new, double z_new, double theta_new){
+
+    std::vector<geometry_msgs::msg::Point> transformed_keypoints;
+
+    for (const auto& kp : keypoints) {
+        geometry_msgs::msg::Point transformed_kp;
+        // Step 1: Rotate the keypoint by the object's orientation
+        double rotated_x = std::cos(theta_base) * kp.x - std::sin(theta_base) * kp.y;
+        double rotated_y = std::sin(theta_base) * kp.x + std::cos(theta_base) * kp.y;
+        double rotated_z=0;
+
+        // Step 2: Translate the keypoint to the object's global position
+        double global_x = rotated_x + x_base;
+        double global_y = rotated_y + y_base;
+        double global_z=0;
+
+        // Step 3: Transform the keypoint from the global frame to the particle's frame
+        transformed_kp.x = std::cos(theta_new) * (global_x - x_new) + std::sin(theta_new) * (global_y - y_new);
+        transformed_kp.y = -std::sin(theta_new) * (global_x - x_new) + std::cos(theta_new) * (global_y - y_new);
+        transformed_kp.z = 0; // Assuming 2D transformation
+        
+        transformed_keypoints.push_back(transformed_kp);
+    }
+
+    return transformed_keypoints;
+}
+
 
 double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, double particle_theta) {
     double angle = feature_theta_map - particle_theta;
@@ -315,6 +320,7 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
     
     feature.x = msg.position.x;
     feature.y = msg.position.y;
+    feature.z = msg.position.z;
     feature.type = msg.type;
 
     tf2::Quaternion q(
@@ -591,7 +597,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             }
             else {
                 std::cout<<"OBJECT"<<std::endl;
-                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, type);
+                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, obs.type);
             }
 
         }
@@ -655,8 +661,24 @@ double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_
 double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type){
     //first see which object of that type is closer
     map_features::FeatureObject expected_Object = getExpectedFeaturesCloserObject(p, type, noisy_x, noisy_y, noisy_z);
-    
+    //i need to transform the keypoints from the objects local frame to the particles frame
 
+    //cumpute the keypoints from the closest object in the particles frame
+    std::vector<geometry_msgs::msg::Point> expected_keypoints = getKeypointsInNewFrame(expected_Object.keypoints, 
+        expected_Object.x, expected_Object.y, 0, expected_Object.theta,
+        p.x, p.y, 0, p.theta);
+
+    std::vector<geometry_msgs::msg::Point> observed_keypoints = getKeypointsInNewFrame(expected_Object.keypoints, 
+        expected_Object.x, expected_Object.y, 0, expected_Object.theta,
+        noisy_x, noisy_y, 0, measured_theta);  
+    
+    double likelihood = 0.0;
+    for (size_t i = 0; i < observed_keypoints.size(); ++i) {
+        double dist = std::hypot(observed_keypoints[i].x - expected_keypoints[i].x, observed_keypoints[i].y - expected_keypoints[i].y);
+        double distance_likelihood = (std::exp(- (dist * dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
+        likelihood += distance_likelihood;
+    }
+    return likelihood;
 }
 
 

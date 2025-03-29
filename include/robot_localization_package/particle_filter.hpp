@@ -43,6 +43,7 @@ private:
     struct DecodedMsg {
         double x;
         double y;
+        double z;
         double theta;  
         std::string type;
         std::array<std::array<double, 3>, 3> covariance_pos;
@@ -125,6 +126,7 @@ private:
     double transformAngleToParticleFrame(double feature_theta_map, double particle_theta);
     double computeAngleLikelihood(double measured_angle, double expected_angle, double sigma);
     ParticleFilter::DecodedMsg decodeMsg(const robot_msgs::msg::Feature& msg);
+    std::vector<geometry_msgs::msg::Point> getKeypointsInNewFrame(std::vector<geometry_msgs::msg::Point> keypoints, double  x_base, double y_base, double z_base, double theta_base, double x_new, double y_new, double z_new, double theta_new);
 
     double iterationCounter;
     bool first_update_ = true;  
