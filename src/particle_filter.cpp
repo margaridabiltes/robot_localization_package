@@ -534,7 +534,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     
     double delta_theta_odom = odom_theta - last_theta_;
 
-    if (delta_distance > 0.1 || std::abs(delta_theta_odom) > 0.1) {
+    if (delta_distance > 0.15 || std::abs(delta_theta_odom) > 0.15) {
         if (!last_map_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
@@ -608,7 +608,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             double noisy_z = obs.z + noise_pos_z(generator_);
 
             if(obs.type == "corner"){
-                std::cout<<"CORNER"<<std::endl;
+                //std::cout<<"CORNER"<<std::endl;
                 likelihood+=computeLikelihoodCorner(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta);
             }
             else {
@@ -692,7 +692,7 @@ double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x
     for (size_t i = 0; i < observed_keypoints.size(); i++) {
         double min_dist = std::numeric_limits<double>::max();
         for(size_t j=0; j<expected_keypoints.size(); j++){
-            double dist = std::hypot(observed_keypoints[i].x - expected_keypoints[i].x, observed_keypoints[i].y - expected_keypoints[i].y);
+            double dist = std::hypot(observed_keypoints[i].x - expected_keypoints[j].x, observed_keypoints[i].y - expected_keypoints[j].y);
             if (dist < min_dist) {
                 min_dist = dist;
             }
@@ -759,7 +759,7 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     if(iterationCounter == MAX_ITERATION){
         std::cout<<"Injecting particles"<<std::endl;
-        injectRandomParticles(0.2);
+        injectRandomParticles(0.3);
         iterationCounter=0;
     } 
 
