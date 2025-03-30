@@ -303,6 +303,11 @@ double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, d
 }
 
 double ParticleFilter::computeAngleLikelihood(double measured_angle, double expected_angle, double sigma) {
+    //add noise to the measured angle
+    if(measured_angle > M_PI) measured_angle -= 2 * M_PI;
+    if(measured_angle < -M_PI) measured_angle += 2 * M_PI;
+    if(expected_angle > M_PI) expected_angle -= 2 * M_PI;
+    if(expected_angle < -M_PI) expected_angle += 2 * M_PI;
 
     double error = measured_angle - expected_angle;
 
@@ -565,6 +570,10 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     new_map=false;
 
     for (auto &p : particles_) {
+        //orint msg received
+        for(const auto &obs_msg : msg->features) {
+            std::cout << "Received feature: " << obs_msg.type << " at (" << obs_msg.position.x << ", " << obs_msg.position.y << ")" << std::endl;
+        }
         
         double likelihood = 0;  
         for (const auto &obs_msg : msg->features) {
@@ -577,7 +586,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
 
             double sigma_theta = std::sqrt(obs.covariance_angle[2][2]); 
             //ver este sigam_pos 
-            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y + sigma_z*sigma_z) / 3.0);
+            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y + sigma_z*sigma_z) / 2.0);
 
             std::normal_distribution<double> measurement_noise(0, sigma_pos);
             std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
@@ -610,14 +619,14 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             p.weight =p.weight/ 2;
         }
     }   
-  
+   
+
     normalizeWeights();
 
-
-    resampleParticles(ResamplingAmount::MAX_WEIGHT, ResamplingMethod::RESIDUAL); 
+    resampleParticles(ResamplingAmount::ESS, ResamplingMethod::RESIDUAL); 
     
     if(resample_flag_==false){
-        replaceWorstParticles(0.05);
+        replaceWorstParticles(0.15);
 
     }
     else{

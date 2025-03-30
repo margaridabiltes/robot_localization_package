@@ -26,8 +26,8 @@
 
 #define noise_x_ 0.05
 #define noise_y_ 0.05
-#define noise_theta_ 0.1
-#define MAX_ITERATION 20
+#define noise_theta_ 0.08
+#define MAX_ITERATION 10
 
 
 class ParticleFilter : public rclcpp::Node {
@@ -64,8 +64,6 @@ private:
 
     
     std::default_random_engine generator_;
-    double sensor_noise_ = 0.5; 
-    double angle_sigma_ = M_PI / 36.0;
 
     // Feature storage
     map_features::MapLoader map_loader_;
