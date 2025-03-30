@@ -254,9 +254,9 @@ map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(cons
                 closest_distance = distance;
 
                 //update the object
-                closest_object.x = map.x;
-                closest_object.y = map.y;
-                closest_object.z = map.z;
+                closest_object.x = map_x;
+                closest_object.y = map_y;
+                closest_object.z = map_z;
                 closest_object.theta = object_theta;
                 closest_object.type = type;
                 closest_object.keypoints = object_ptr->keypoints;
