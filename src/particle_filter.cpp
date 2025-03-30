@@ -586,9 +586,8 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
 
             double sigma_theta = std::sqrt(obs.covariance_angle[2][2]); 
             //ver este sigam_pos 
-            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y + sigma_z*sigma_z) / 2.0);
+            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y ) / 2.0);
 
-            std::normal_distribution<double> measurement_noise(0, sigma_pos);
             std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
             std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
             std::normal_distribution<double> noise_pos_z(0.0, sigma_z);
