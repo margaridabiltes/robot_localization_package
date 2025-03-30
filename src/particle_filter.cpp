@@ -295,7 +295,6 @@ std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(st
     return transformed_keypoints;
 }
 
-
 double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, double particle_theta) {
     double angle = feature_theta_map - particle_theta;
 
@@ -535,7 +534,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     
     double delta_theta_odom = odom_theta - last_theta_;
 
-    if (delta_distance > 0.2 || std::abs(delta_theta_odom) > 0.2) {
+    if (delta_distance > 0.1 || std::abs(delta_theta_odom) > 0.1) {
         if (!last_map_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
@@ -572,12 +571,18 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
     new_map=false;
 
+    //print how many features are in the msg
+    std::cout << "Number of features in the msg: " << msg->features.size() << std::endl;
+    for (const auto &obs_msg : msg->features) {
+
+        DecodedMsg obs = decodeMsg(obs_msg);
+        std::cout<<"Obs x: "<<obs.x<<std::endl;
+        std::cout<<"Obs y: "<<obs.y<<std::endl;
+        std::cout<<"Obs theta"<<obs.theta<<std::endl;
+    }
+
     for (auto &p : particles_) {
-        //orint msg received
-        for(const auto &obs_msg : msg->features) {
-            std::cout << "Received feature: " << obs_msg.type << " at (" << obs_msg.position.x << ", " << obs_msg.position.y << ")" << std::endl;
-        }
-        
+    
         double likelihood = 0;  
         for (const auto &obs_msg : msg->features) {
 
@@ -607,7 +612,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
                 likelihood+=computeLikelihoodCorner(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta);
             }
             else {
-                std::cout<<"OBJECT"<<std::endl;
+               // std::cout<<"OBJECT"<<std::endl;
                 likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, obs.type);
             }
 
@@ -680,18 +685,23 @@ double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x
         p.x, p.y, 0, p.theta);
 
     std::vector<geometry_msgs::msg::Point> observed_keypoints = getKeypointsInNewFrame(expected_Object.keypoints, 
-        expected_Object.x, expected_Object.y, 0, expected_Object.theta,
-        noisy_x, noisy_y, 0, measured_theta);  
+        noisy_x, noisy_y, 0, measured_theta,
+        0, 0, 0, 0);  
     
     double likelihood = 0.0;
-    for (size_t i = 0; i < observed_keypoints.size(); ++i) {
-        double dist = std::hypot(observed_keypoints[i].x - expected_keypoints[i].x, observed_keypoints[i].y - expected_keypoints[i].y);
-        double distance_likelihood = (std::exp(- (dist * dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
+    for (size_t i = 0; i < observed_keypoints.size(); i++) {
+        double min_dist = std::numeric_limits<double>::max();
+        for(size_t j=0; j<expected_keypoints.size(); j++){
+            double dist = std::hypot(observed_keypoints[i].x - expected_keypoints[i].x, observed_keypoints[i].y - expected_keypoints[i].y);
+            if (dist < min_dist) {
+                min_dist = dist;
+            }
+        }
+        double distance_likelihood = (std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
         likelihood += distance_likelihood;
     }
     return likelihood;
 }
-
 
 void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod method) {
     if (particles_.empty()) {
@@ -711,7 +721,7 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     switch(type){
         case ResamplingAmount::ESS:
-            if (ess > num_particles_ * 0.5) {
+            if (ess > num_particles_ * 0.3) {
                 RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
                 return;
             }
