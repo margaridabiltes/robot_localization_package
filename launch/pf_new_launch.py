@@ -17,9 +17,9 @@ def generate_launch_description():
 
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
-    world_file = os.path.join(worlds_dir, 'worlds', 'square_two_boxes.wbt')
-    map_yaml = os.path.join(worlds_dir, 'maps', 'square_no_box.yaml')
-    map_features = os.path.join(worlds_dir, 'feature_maps', 'square_two_boxes.yaml')
+    world_file = os.path.join(worlds_dir, 'worlds', 'square_one_box.wbt')
+    map_yaml = os.path.join(worlds_dir, 'maps', 'square_one_box.yaml')
+    map_features = os.path.join(worlds_dir, 'feature_maps', 'square_one_box.yaml')
     rviz_config = os.path.join(worlds_dir, 'rviz', 'corners_orientation.rviz')
 
     # Webots
@@ -77,7 +77,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='base_to_lidar_broadcaster',
-        arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'lidar2D']
+        arguments=['0', '0', '0', '0', '0', '0', 'base_footprint', 'lidar2D']
     )
 
     # RViz

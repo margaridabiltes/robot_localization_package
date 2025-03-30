@@ -13,7 +13,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     this->get_parameter("map_features", map_features_);
 
     feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
-        "/corner", 10,
+        "/features", 10,
         std::bind(&ParticleFilter::storeMapMessage, this, std::placeholders::_1)
     );    
 
@@ -23,7 +23,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     );
 
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
-    particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/markers", 10);
+    particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/particles", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
     //timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
@@ -114,7 +114,7 @@ void ParticleFilter::publishParticles() {
         visualization_msgs::msg::Marker marker;
         marker.header.frame_id = "map";
         marker.header.stamp = this->get_clock()->now();
-        marker.ns = "particles";
+        marker.ns = "particle";
         marker.id = i++;
 
         marker.type = visualization_msgs::msg::Marker::ARROW;
