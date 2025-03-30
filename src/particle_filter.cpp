@@ -26,7 +26,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/particles", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
-    //timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
+    timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
 
     while (rclcpp::ok() && !last_map_msg_) {
         RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
@@ -252,12 +252,12 @@ map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(cons
             if(distance < closest_distance){
                 closest_distance = distance;
                 //update the object
-                closest_object.x = particle_x;
-                closest_object.y = particle_y;
-                closest_object.z = particle_z;
-                closest_object.theta = object_theta;
-                closest_object.type = type;
-                closest_object.keypoints = object_ptr->keypoints;
+                map.x = particle_x;
+                map.y = particle_y;
+                map.z = particle_z;
+                map.theta = object_theta;
+                map.type = type;
+                map.keypoints = object_ptr->keypoints;
             }
         }
     }
@@ -764,13 +764,15 @@ void ParticleFilter::computeEstimatedPose(){
     // Use only the top 10 particles
     int num_top_particles = std::min(10, static_cast<int>(sorted_particles.size()));
 
-    double x_sum = 0, y_sum = 0, theta_sum = 0, weight_sum = 0;
+    double x_sum = 0, y_sum = 0, theta_x_sum = 0, theta_y_sum = 0, weight_sum = 0;
 
     for (int i = 0; i < num_top_particles; i++) {
         const auto &p = sorted_particles[i];
         x_sum += p.x * p.weight;
         y_sum += p.y * p.weight;
         theta_sum += p.theta * p.weight;
+        theta_x_sum += std::cos(p.theta) * p.weight;
+        theta_y_sum += std::sin(p.theta) * p.weight;
         weight_sum += p.weight;
     }
 
@@ -779,11 +781,15 @@ void ParticleFilter::computeEstimatedPose(){
         x_sum /= weight_sum;
         y_sum /= weight_sum;
         theta_sum /= weight_sum;
+        theta_x_sum /= weight_sum;
+        theta_y_sum /= weight_sum;
     }
 
     x_last_final=x_sum;
     y_last_final=y_sum;
-    theta_last_final=theta_sum;
+    //theta_last_final=theta_sum;
+    theta_last_final = std::atan2(theta_y_sum, theta_x_sum);
+
 
     if (theta_last_final > M_PI) theta_last_final -= 2 * M_PI;
     if (theta_last_final < -M_PI) theta_last_final += 2 * M_PI;
@@ -793,6 +799,7 @@ void ParticleFilter::computeEstimatedPose(){
 void ParticleFilter::publishEstimatedPose() {
     if (particles_.empty()) return;
 
+    computeEstimatedPose();
 
     std::cout << "Publishing Estimated Pose" << std::endl;
     
@@ -849,7 +856,7 @@ void ParticleFilter::publishEstimatedPose() {
     map_to_odom_tf.transform.rotation.z = q_correction.z();
     map_to_odom_tf.transform.rotation.w = q_correction.w();
 
-    tf_broadcaster_->sendTransform(map_to_odom_tf);
+    //tf_broadcaster_->sendTransform(map_to_odom_tf);
 
     RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
