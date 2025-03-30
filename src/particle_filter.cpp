@@ -767,7 +767,7 @@ void ParticleFilter::computeEstimatedPose(){
     // Use only the top 10 particles
     int num_top_particles = std::min(10, static_cast<int>(sorted_particles.size()));
 
-    double x_sum = 0, y_sum = 0, theta_x_sum = 0, theta_y_sum = 0, weight_sum = 0;
+    double x_sum = 0, y_sum = 0, theta_sum = 0, theta_x_sum = 0, theta_y_sum = 0, weight_sum = 0;
 
     for (int i = 0; i < num_top_particles; i++) {
         const auto &p = sorted_particles[i];
