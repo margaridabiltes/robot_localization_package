@@ -230,6 +230,7 @@ std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorn
 
 map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z){
     map_features::FeatureObject closest_object(0, 0, 0, 0, type, {});
+    
     //compute the center of objects of that type in the particles frame and see which one is is closer to the double_x,y,z
     double closest_distance = std::numeric_limits<double>::max();
     for(const auto& feature_ptr : global_features_) {
@@ -251,10 +252,11 @@ map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(cons
 
             if(distance < closest_distance){
                 closest_distance = distance;
+
                 //update the object
-                closest_object.x = particle_x;
-                closest_object.y = particle_y;
-                closest_object.z = particle_z;
+                closest_object.x = map.x;
+                closest_object.y = map.y;
+                closest_object.z = map.z;
                 closest_object.theta = object_theta;
                 closest_object.type = type;
                 closest_object.keypoints = object_ptr->keypoints;
@@ -271,6 +273,7 @@ std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(st
 
     for (const auto& kp : keypoints) {
         geometry_msgs::msg::Point transformed_kp;
+        
         // Step 1: Rotate the keypoint by the object's orientation
         double rotated_x = std::cos(theta_base) * kp.x - std::sin(theta_base) * kp.y;
         double rotated_y = std::sin(theta_base) * kp.x + std::cos(theta_base) * kp.y;
