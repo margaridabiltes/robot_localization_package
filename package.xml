@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_localization_package</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Particle filter for robot localization</description>
   <maintainer email="XYZ@hotmail.com">XYZ</maintainer>
   <license>Apache-2.0</license>
 
@@ -11,21 +11,13 @@
 
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend> 
   <depend>tf2_ros</depend> 
-  <depend>webots_ros2_driver</depend>
-  <depend>pluginlib</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>nav_msgs</depend>
-  <depend>tf2_sensor_msgs</depend>
   <depend>visualization_msgs</depend>
 
-  <build_depend>robot_msgs</build_depend>
   <exec_depend>robot_msgs</exec_depend>
-
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
