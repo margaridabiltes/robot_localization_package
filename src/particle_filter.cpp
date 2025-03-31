@@ -12,6 +12,11 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     this->declare_parameter("map_features", std::string(""));
     this->get_parameter("map_features", map_features_);
 
+    //parse the features received and store them
+    map_loader_.loadToGlobalMap(map_features_);
+    global_features_ = map_loader_.getGlobalFeatureMap();
+
+    //Subscribe to the features and odometry topics
     feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
         "/features", 10,
         std::bind(&ParticleFilter::storeMapMessage, this, std::placeholders::_1)
@@ -22,33 +27,21 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
         std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
     );
 
+    // Create publishers for pose and particles
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
     particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/particles", 10);
+
+    // Create a TransformBroadcaster for publishing the estimated pose
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
+    // Create a timer to publish the estimated pose
     timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
 
-    while (rclcpp::ok() && !last_map_msg_) {
-        RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
-        rclcpp::spin_some(this->get_node_base_interface());
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
+    // Initialize particles and color weight initialization
     initializeParticles();
     computeColorWeightLookup();
 
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
-
-    map_loader_.loadToGlobalMap(map_features_);
-
-    // Get the global feature map after loading
-    global_features_ = map_loader_.getGlobalFeatureMap();
-
-    //print features
-    for(auto feature : global_features_){
-        std::cout << "Feature: " << feature->x << " " << feature->y << " " << feature->z << " " << feature->theta << " " << feature->type << std::endl;
-    }
-
 
 }
 

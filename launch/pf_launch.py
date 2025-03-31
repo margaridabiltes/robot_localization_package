@@ -17,9 +17,9 @@ def generate_launch_description():
 
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
-    world_file = os.path.join(worlds_dir, 'worlds', 'square_one_box.wbt')
-    map_yaml = os.path.join(worlds_dir, 'maps', 'square_one_box.yaml')
-    map_features = os.path.join(worlds_dir, 'feature_maps', 'square_one_box.yaml')
+    world_file = os.path.join(worlds_dir, 'worlds', '4x4_one_box_1x1.wbt')
+    map_yaml = os.path.join(worlds_dir, 'maps', '4x4_one_box_1x1.yaml')
+    map_features = os.path.join(worlds_dir, 'feature_maps', '4x4_one_box_1x1.yaml')
     rviz_config = os.path.join(worlds_dir, 'rviz', 'corners_orientation.rviz')
 
     # Webots
