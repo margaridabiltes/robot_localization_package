@@ -12,16 +12,16 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     this->declare_parameter("map_features", std::string(""));
     this->get_parameter("map_features", map_features_);
 
-    //parse the features received and store them
+    if (map_features_.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "No map features provided. Please set the 'map_features' parameter.");
+        return;
+    }
+
+    // Load the map features from the YAML file and store them in the global map
     map_loader_.loadToGlobalMap(map_features_);
     global_features_ = map_loader_.getGlobalFeatureMap();
 
-    //print the features
-    for (const auto& feature : global_features_) {
-        RCLCPP_INFO(this->get_logger(), "Feature: %s", feature->type.c_str());
-    }
-
-    //Subscribe to the features and odometry topics
+    // Subscribe to the features observed by the robot and odometry topics
     feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
         "/features", 10,
         std::bind(&ParticleFilter::storeMapMessage, this, std::placeholders::_1)
@@ -32,23 +32,26 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
         std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
     );
 
-    // Create publishers for pose and particles
+    // Create publishers for the estimated pose and particles
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
     particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/particles", 10);
 
-    // Create a TransformBroadcaster for publishing the estimated pose
+    // Create a transform broadcaster
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
-    // Create a timer to publish the estimated pose
+    // Create a timer to publish the estimated pose and particles
     timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
 
-    while (new_map==false) {
-        RCLCPP_INFO(this->get_logger(), "Waiting for the first map message...");
+    while (rclcpp::ok() && !last_map_msg_) {
+        RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
+        rclcpp::spin_some(this->get_node_base_interface());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // Initialize particles and color weight initialization
+    // Initialize the particles
     initializeParticles();
+
+    // Initialize the color pallete for the particles weights
     computeColorWeightLookup();
 
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
@@ -198,6 +201,7 @@ void ParticleFilter::injectRandomParticles(double percentage){
 }
 
 void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg) {
+    std::cout << "Received map message yooo" << std::endl;
     last_map_msg_ = msg; 
     new_map = true; 
 }
