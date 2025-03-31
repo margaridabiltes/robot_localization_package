@@ -6,10 +6,17 @@ namespace map_features {
 std::vector<FeaturePtr> MapLoader::global_features_;
 
 void MapLoader::loadToGlobalMap(const std::string& yaml_path) {
-    YAML::Node root = YAML::LoadFile(yaml_path);
-    if (!root["features"]) {
-        throw std::runtime_error("No 'features' key found in YAML.");
-    }
+        // Check if the file exists
+        std::ifstream file(yaml_path);
+        if (!file.good()) {
+            throw std::runtime_error("YAML file not found: " + yaml_path);
+        }
+    
+        // Load the YAML file
+        YAML::Node root = YAML::LoadFile(yaml_path);
+        if (!root["features"]) {
+            throw std::runtime_error("No 'features' key found in YAML file: " + yaml_path);
+        }
 
     for (const auto& f : root["features"]) {
         std::string type = f["type"].as<std::string>();

@@ -5,6 +5,8 @@
 #include <memory>
 #include <map>
 #include <yaml-cpp/yaml.h>
+#include <fstream>
+#include <iostream>
 
 #include "FeatureStruct.hpp"
 #include <geometry_msgs/msg/point.hpp> 
