@@ -16,6 +16,11 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
     map_loader_.loadToGlobalMap(map_features_);
     global_features_ = map_loader_.getGlobalFeatureMap();
 
+    //print the features
+    for (const auto& feature : global_features_) {
+        RCLCPP_INFO(this->get_logger(), "Feature: %s", feature->type.c_str());
+    }
+
     //Subscribe to the features and odometry topics
     feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
         "/features", 10,
@@ -36,6 +41,11 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000)
 
     // Create a timer to publish the estimated pose
     timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
+
+    while (new_map==false) {
+        RCLCPP_INFO(this->get_logger(), "Waiting for the first map message...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
     // Initialize particles and color weight initialization
     initializeParticles();
@@ -148,8 +158,8 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 
     int num_replace = num_particles_ * percentage;
 
-    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_x(-2, 2);
+    std::uniform_real_distribution<double> dist_y(-2, 2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     for (int i = 0; i < num_replace; i++) {
@@ -166,8 +176,8 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 
 void ParticleFilter::injectRandomParticles(double percentage){
     //replace random particles
-    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_x(-2, 2);
+    std::uniform_real_distribution<double> dist_y(-2, 2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     int num_replace = num_particles_ * percentage;
@@ -472,8 +482,8 @@ void ParticleFilter::initializeParticles() {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
-    std::uniform_real_distribution<double> dist_x(-0.75, 0.75);
-    std::uniform_real_distribution<double> dist_y(-0.75, 0.75);
+    std::uniform_real_distribution<double> dist_x(-2, 2);
+    std::uniform_real_distribution<double> dist_y(-2, 2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
 
     log_file_.open("log_pf.txt", std::ios::app);
@@ -615,7 +625,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
     
     for ( auto &p : particles_){
-        if(p.x > 0.75 || p.x < -0.75 || p.y > 0.75 || p.y < -0.75){
+        if(p.x > 2 || p.x < -2 || p.y > 2 || p.y < -2){
             p.weight =p.weight/ 2;
         }
     }   
