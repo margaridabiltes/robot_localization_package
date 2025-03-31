@@ -401,10 +401,10 @@ void ParticleFilter::stratifiedResample() {
     }
 
     std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
-    double r = dist(generator_);
 
     int index = 0;
     for (size_t i = 0; i < num_particles_; i++) {
+        double r = dist(generator_);
         double U = r + (i / static_cast<double>(num_particles_));
         while (U > cumulative_weights[index]) index++;
         new_particles.push_back(particles_[index]);
@@ -426,7 +426,6 @@ void ParticleFilter::systematicResample() {
 
     std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
     double r = dist(generator_);
-
     int index = 0;
     for (size_t i = 0; i < num_particles_; i++) {
         double U = r + (i / static_cast<double>(num_particles_));
