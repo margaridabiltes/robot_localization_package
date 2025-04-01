@@ -161,8 +161,8 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 
     int num_replace = num_particles_ * percentage;
 
-    std::uniform_real_distribution<double> dist_x(-2, 2);
-    std::uniform_real_distribution<double> dist_y(-2, 2);
+    std::uniform_real_distribution<double> dist_x(-ROOM_SIZE_X/2, ROOM_SIZE_X/2);
+    std::uniform_real_distribution<double> dist_y(-ROOM_SIZE_Y/2, ROOM_SIZE_Y/2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     for (int i = 0; i < num_replace; i++) {
@@ -179,8 +179,8 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 
 void ParticleFilter::injectRandomParticles(double percentage){
     //replace random particles
-    std::uniform_real_distribution<double> dist_x(-2, 2);
-    std::uniform_real_distribution<double> dist_y(-2, 2);
+    std::uniform_real_distribution<double> dist_x(-ROOM_SIZE_X/2, ROOM_SIZE_X/2);
+    std::uniform_real_distribution<double> dist_y(-ROOM_SIZE_Y/2, ROOM_SIZE_Y/2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     int num_replace = num_particles_ * percentage;
@@ -485,8 +485,8 @@ void ParticleFilter::initializeParticles() {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
-    std::uniform_real_distribution<double> dist_x(-2, 2);
-    std::uniform_real_distribution<double> dist_y(-2, 2);
+    std::uniform_real_distribution<double> dist_x(-ROOM_SIZE_X/2, ROOM_SIZE_X/2);
+    std::uniform_real_distribution<double> dist_y(-ROOM_SIZE_Y/2, ROOM_SIZE_Y/2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
 
     log_file_.open("log_pf.txt", std::ios::app);
@@ -628,7 +628,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
     
     for ( auto &p : particles_){
-        if(p.x > 2 || p.x < -2 || p.y > 2 || p.y < -2){
+        if(p.x > ROOM_SIZE_X/2 || p.x < -ROOM_SIZE_X/2 || p.y > ROOM_SIZE_Y/2 || p.y < -ROOM_SIZE_Y/2){
             p.weight =p.weight/ 2;
         }
     }   
@@ -727,7 +727,7 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     switch(type){
         case ResamplingAmount::ESS:
-            if (ess > num_particles_ * 0.3) {
+            if (ess > num_particles_ * 0.5) {
                 RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
                 return;
             }

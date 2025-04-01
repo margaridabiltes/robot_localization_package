@@ -26,7 +26,9 @@
 #define noise_y_ 0.05
 #define noise_theta_ 0.08
 #define MAX_ITERATION 10
-
+#define ROOM_SIZE_X 4
+#define ROOM_SIZE_Y 4
+#define ROOM_SIZE_Z 0
 
 class ParticleFilter : public rclcpp::Node {
 public:
