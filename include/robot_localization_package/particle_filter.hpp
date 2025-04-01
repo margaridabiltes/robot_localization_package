@@ -22,22 +22,27 @@
 #include <array>
 #include <string>
 
-#define noise_x_ 0.05
-#define noise_y_ 0.05
-#define noise_theta_ 0.08
-#define MAX_ITERATION 10
+#define NUM_PARTICLES 1000
+
+#define ROOM_SIZE_X 4
+#define ROOM_SIZE_Y 4
+#define ROOM_SIZE_Z 0
 
 #define MOTION_DELTA_DISTANCE 0.1
 #define MOTION_DELTA_ANGLE 0.1
-#define MOTION_X_VARIANCE
-#define MOTION_Y_VARIANCE
-#define MOTION_ANGLE_VARIANCE
-#define RESAMPLE_ESS_THRESHOLD
-#define RESAMPLE_MAX_WEIGHT_THRESHOLD
-#define INJECT_NUM_ITERATIONS
-#define INJECT_PERCENTAGE
-#define REPLACE_WORST_PERCENTAGE
-#define ESTIMATE_NUM_PARTICLES
+#define MOTION_X_VARIANCE 0.05
+#define MOTION_Y_VARIANCE 0.05
+#define MOTION_ANGLE_VARIANCE 0.08
+
+#define RESAMPLE_ESS_THRESHOLD 0.5
+#define RESAMPLE_MAX_WEIGHT_THRESHOLD 4
+
+#define INJECT_NUM_ITERATIONS 10
+#define INJECT_PERCENTAGE 0.3
+
+#define REPLACE_WORST_PERCENTAGE 0.15
+
+#define ESTIMATE_NUM_PARTICLES 10
 
 
 class ParticleFilter : public rclcpp::Node {

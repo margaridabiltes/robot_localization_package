@@ -1,7 +1,7 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(1000),
+ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(NUM_PARTICLES),
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_map_msg_(nullptr)
 {
@@ -417,135 +417,7 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
 
 //! Feature Handling start !//
 
-#pragma region feature handling
-
-#pragma endregion feature handling
-
-//! Feature Handling end !//
-
-//! Resampling functions start !//
-
-#pragma region resampling functions
-
-void ParticleFilter::multinomialResample() {
-    std::vector<Particle> new_particles;
-    new_particles.reserve(num_particles_);
-
-    std::vector<double> cumulative_weights(num_particles_);
-    cumulative_weights[0] = particles_[0].weight;
-    for (size_t i = 1; i < num_particles_; i++) {
-        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
-    }
-
-    std::uniform_real_distribution<double> dist(0.0, cumulative_weights.back());
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    generator_.seed(seed);
-    
-    for (size_t i = 0; i < num_particles_; i++) {
-        double r = dist(generator_);
-        auto it = std::lower_bound(cumulative_weights.begin(), cumulative_weights.end(), r);
-        int index = std::distance(cumulative_weights.begin(), it);
-        new_particles.push_back(particles_[index]);
-    }
-
-    particles_ = new_particles;
-
-}
-
-void ParticleFilter::stratifiedResample() {
-    std::vector<Particle> new_particles;
-    new_particles.reserve(num_particles_);
-
-    std::vector<double> cumulative_weights(num_particles_);
-    cumulative_weights[0] = particles_[0].weight;
-    for (size_t i = 1; i < num_particles_; i++) {
-        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
-    }
-      
-    std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    generator_.seed(seed);
-
-    int index = 0;
-    for (size_t i = 0; i < num_particles_; i++) {
-        double r = dist(generator_);                  //Generate new random variable for each particle
-        double U = r + (i / static_cast<double>(num_particles_));
-        while (U > cumulative_weights[index]) index++;
-        new_particles.push_back(particles_[index]);
-    }
-
-    particles_ = new_particles;
-}
-
-void ParticleFilter::systematicResample() {
-    std::vector<Particle> new_particles;
-    new_particles.reserve(num_particles_);
-
-    // Compute cumulative weights
-    std::vector<double> cumulative_weights(num_particles_);
-    cumulative_weights[0] = particles_[0].weight;
-    for (size_t i = 1; i < num_particles_; i++) {
-        cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
-    }
-
-    std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    generator_.seed(seed);
-    double r = dist(generator_);
-    int index = 0;
-    for (size_t i = 0; i < num_particles_; i++) {
-        double U = r + (i / static_cast<double>(num_particles_));
-        while (U > cumulative_weights[index]) index++;
-        new_particles.push_back(particles_[index]);
-    }
-
-    particles_ = new_particles;
-}
-
-void ParticleFilter::residualResample() {
-    std::vector<Particle> new_particles;
-    new_particles.reserve(num_particles_);
-
-    std::vector<double> residual_weights;
-    int total_copies = 0;
-
-    for (const auto &p : particles_) {
-        int num_copies = static_cast<int>(p.weight * num_particles_);
-        total_copies += num_copies;
-        for (int j = 0; j < num_copies; j++) new_particles.push_back(p);
-        residual_weights.push_back((p.weight * num_particles_) - num_copies);
-    }
-
-    std::vector<double> cumulative_weights;
-    double sum_residuals = 0.0;
-    for (double rw : residual_weights) {
-        sum_residuals += rw;
-        cumulative_weights.push_back(sum_residuals);
-    }
-
-    std::uniform_real_distribution<double> dist(0.0, sum_residuals);
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    generator_.seed(seed);
-    while (total_copies < num_particles_) {
-        double r = dist(generator_);
-        for (size_t i = 0; i < cumulative_weights.size(); i++) {
-            if (r <= cumulative_weights[i]) {
-                new_particles.push_back(particles_[i]);
-                total_copies++;
-                break;
-            }
-        }
-    }
-
-    particles_ = new_particles;
-}
-
-#pragma endregion resampling functions
-
-//! Resampling functions end !//
-
-//! Particle Filter Functions !//
-
+#pragma region feature handlingnoise
 #pragma region pf functions
 
 void ParticleFilter::initializeParticles() {
@@ -598,9 +470,9 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_y_odom = odom_y - last_y_;
     double delta_distance = std::hypot(delta_x_odom, delta_y_odom);
 
-    std::uniform_real_distribution<double> noise_x(-noise_x_, noise_x_);
-    std::uniform_real_distribution<double> noise_y(-noise_y_, noise_y_);
-    std::uniform_real_distribution<double> noise_theta(-noise_theta_, noise_theta_);
+    std::uniform_real_distribution<double> noise_x(-MOTION_X_VARIANCE, MOTION_X_VARIANCE);
+    std::uniform_real_distribution<double> noise_y(-MOTION_Y_VARIANCE, MOTION_Y_VARIANCE);
+    std::uniform_real_distribution<double> noise_theta(-MOTION_ANGLE_VARIANCE, MOTION_ANGLE_VARIANCE);
     
     double alpha_odom = atan2(delta_y_odom, delta_x_odom);
     double alpha_robot = alpha_odom - last_theta_;
@@ -696,7 +568,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     
     // Replace worst particles if resampling flag is not set
     if (!resample_flag_) {
-        replaceWorstParticles(0.15);
+        replaceWorstParticles(REPLACE_WORST_PERCENTAGE);
     } else {
         resample_flag_ = false;
     }
@@ -716,13 +588,13 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     switch(type){
         case ResamplingAmount::ESS:
-            if (ess > num_particles_ * 0.5) {
+            if (ess > num_particles_ * RESAMPLE_ESS_THRESHOLD) {
                 RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
                 return;
             }
             break;
         case ResamplingAmount::MAX_WEIGHT:
-            if (max_weight < 4/num_particles_) {
+            if (max_weight < RESAMPLE_MAX_WEIGHT_THRESHOLD/num_particles_) {
                 RCLCPP_INFO(this->get_logger(), "Skipping resampling, max weight is high.");
                 return;
             }
@@ -755,9 +627,9 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     // Inject random particles base on number of resamples performed
     iterationCounter++;
-    if(iterationCounter == MAX_ITERATION){
+    if(iterationCounter == INJECT_NUM_ITERATIONS){
         RCLCPP_INFO(this->get_logger(), "Injecting random particles.");
-        injectRandomParticles(0.3);
+        injectRandomParticles(INJECT_PERCENTAGE);
         iterationCounter = 0;
     } 
 
@@ -773,8 +645,8 @@ void ParticleFilter::computeEstimatedPose(){
             return a.weight > b.weight;  
         });
 
-    // Use only the top 10 particles
-    int num_top_particles = std::min(10, static_cast<int>(sorted_particles.size()));
+    // Use only the top ESTIMATE_NUM_PARTICLES particles
+    int num_top_particles = std::min(ESTIMATE_NUM_PARTICLES, static_cast<int>(sorted_particles.size()));
 
     double x_sum = 0, y_sum = 0, theta_sum = 0, theta_x_sum = 0, theta_y_sum = 0, weight_sum = 0;
 
