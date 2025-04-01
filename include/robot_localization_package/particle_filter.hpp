@@ -27,6 +27,18 @@
 #define noise_theta_ 0.08
 #define MAX_ITERATION 10
 
+#define MOTION_DELTA_DISTANCE 0.1
+#define MOTION_DELTA_ANGLE 0.1
+#define MOTION_X_VARIANCE
+#define MOTION_Y_VARIANCE
+#define MOTION_ANGLE_VARIANCE
+#define RESAMPLE_ESS_THRESHOLD
+#define RESAMPLE_MAX_WEIGHT_THRESHOLD
+#define INJECT_NUM_ITERATIONS
+#define INJECT_PERCENTAGE
+#define REPLACE_WORST_PERCENTAGE
+#define ESTIMATE_NUM_PARTICLES
+
 
 class ParticleFilter : public rclcpp::Node {
 public:

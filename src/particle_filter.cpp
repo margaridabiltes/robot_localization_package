@@ -378,6 +378,9 @@ void ParticleFilter::multinomialResample() {
     }
 
     std::uniform_real_distribution<double> dist(0.0, cumulative_weights.back());
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
+    
     for (size_t i = 0; i < num_particles_; i++) {
         double r = dist(generator_);
         auto it = std::lower_bound(cumulative_weights.begin(), cumulative_weights.end(), r);
@@ -399,12 +402,14 @@ void ParticleFilter::stratifiedResample() {
     for (size_t i = 1; i < num_particles_; i++) {
         cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
     }
-
+      
     std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
 
     int index = 0;
     for (size_t i = 0; i < num_particles_; i++) {
-        double r = dist(generator_);
+        double r = dist(generator_);                  //Generate new random variable for each particle
         double U = r + (i / static_cast<double>(num_particles_));
         while (U > cumulative_weights[index]) index++;
         new_particles.push_back(particles_[index]);
@@ -425,6 +430,8 @@ void ParticleFilter::systematicResample() {
     }
 
     std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
     double r = dist(generator_);
     int index = 0;
     for (size_t i = 0; i < num_particles_; i++) {
@@ -458,6 +465,8 @@ void ParticleFilter::residualResample() {
     }
 
     std::uniform_real_distribution<double> dist(0.0, sum_residuals);
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    generator_.seed(seed);
     while (total_copies < num_particles_) {
         double r = dist(generator_);
         for (size_t i = 0; i < cumulative_weights.size(); i++) {
