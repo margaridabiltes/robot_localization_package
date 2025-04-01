@@ -111,9 +111,9 @@ private:
     // Particle filter steps
     void motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg);
     void measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg);
+    void resampleParticles(ResamplingAmount type, ResamplingMethod method);
 
     // Resampling methods
-    void resampleParticles(ResamplingAmount type, ResamplingMethod method);
     void multinomialResample();
     void stratifiedResample();
     void systematicResample();
@@ -148,7 +148,7 @@ private:
     double computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type);
 
     // Color weight functions
-    std::vector<double> colorFromWeight(double weight);
+    std::vector<double> colorFromWeight(double weight) const;
     void computeColorWeightLookup();
 };
 
