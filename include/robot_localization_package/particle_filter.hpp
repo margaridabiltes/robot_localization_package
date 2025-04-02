@@ -22,11 +22,11 @@
 #include <array>
 #include <string>
 
-#define NUM_PARTICLES 1000
+#define NUM_PARTICLES 1000.0
 
-#define ROOM_SIZE_X 4
-#define ROOM_SIZE_Y 4
-#define ROOM_SIZE_Z 0
+#define ROOM_SIZE_X 4.0
+#define ROOM_SIZE_Y 4.0
+#define ROOM_SIZE_Z 0.0
 
 #define MOTION_DELTA_DISTANCE 0.1
 #define MOTION_DELTA_ANGLE 0.1
@@ -35,7 +35,7 @@
 #define MOTION_ANGLE_VARIANCE 0.08
 
 #define RESAMPLE_ESS_THRESHOLD 0.5
-#define RESAMPLE_MAX_WEIGHT_THRESHOLD 4
+#define RESAMPLE_MAX_WEIGHT_THRESHOLD 4.0
 
 #define INJECT_NUM_ITERATIONS 10
 #define INJECT_PERCENTAGE 0.3
@@ -86,12 +86,21 @@ private:
     map_features::MapLoader map_loader_;
     std::vector<map_features::FeaturePtr> global_features_;
     std::string map_features_;
-
+    double room_size_x_, room_size_y_;
+    
     // Particle filter variables
     double num_particles_;
     std::vector<Particle> particles_;
     bool resample_flag_ = false;
     bool new_map = false;
+    double motion_delta_distance_, motion_delta_angle_;
+    double motion_x_variance_, motion_y_variance_, motion_angle_variance_;
+    double resample_ess_threshold_;
+    double resample_max_weight_threshold_;
+    int inject_num_iterations_;
+    double inject_percentage_;
+    double replace_worst_percentage_;
+    int estimate_num_particles_;
 
     // Logging
     std::ofstream log_file_;
@@ -165,6 +174,9 @@ private:
     // Color weight functions
     std::vector<double> colorFromWeight(double weight) const;
     void computeColorWeightLookup();
+
+    // Parameter loading
+    void loadParameters();
 };
 
 #endif  // PARTICLE_FILTER_HPP

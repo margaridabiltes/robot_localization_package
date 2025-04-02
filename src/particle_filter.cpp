@@ -8,6 +8,9 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(NUM_P
     std::cout << "ParticleFilter Constructor START" << std::endl;  
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
+    // Load parameters from the parameter file
+    loadParameters();
+    
     // Retrieve the map_features parameter passed from the launch file
     this->declare_parameter("map_features", std::string(""));
     this->get_parameter("map_features", map_features_);
@@ -61,6 +64,64 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(NUM_P
 //! auxiliar functions start!//
 
 #pragma region auxiliar functions
+
+void ParticleFilter::loadParameters() {
+    RCLCPP_INFO(this->get_logger(), "Loading particle filter parameters...");
+
+    bool success = true;
+
+    this->declare_parameter("num_particles", NUM_PARTICLES);
+    this->declare_parameter("room_size_x", ROOM_SIZE_X);
+    this->declare_parameter("room_size_y", ROOM_SIZE_Y);
+    this->declare_parameter("motion_delta_distance", MOTION_DELTA_DISTANCE);
+    this->declare_parameter("motion_delta_angle", MOTION_DELTA_ANGLE);
+    this->declare_parameter("motion_x_variance", MOTION_X_VARIANCE);
+    this->declare_parameter("motion_y_variance", MOTION_Y_VARIANCE);
+    this->declare_parameter("motion_angle_variance", MOTION_ANGLE_VARIANCE);
+    this->declare_parameter("resample_ess_threshold", RESAMPLE_ESS_THRESHOLD);
+    this->declare_parameter("resample_max_weight_threshold", RESAMPLE_MAX_WEIGHT_THRESHOLD);
+    this->declare_parameter("inject_num_iterations", INJECT_NUM_ITERATIONS);
+    this->declare_parameter("inject_percentage", INJECT_PERCENTAGE);
+    this->declare_parameter("replace_worst_percentage", REPLACE_WORST_PERCENTAGE);
+    this->declare_parameter("estimate_num_particles", ESTIMATE_NUM_PARTICLES);
+
+    success &= this->get_parameter("num_particles", num_particles_);
+    success &= this->get_parameter("room_size_x", room_size_x_);
+    success &= this->get_parameter("room_size_y", room_size_y_);
+    success &= this->get_parameter("motion_delta_distance", motion_delta_distance_);
+    success &= this->get_parameter("motion_delta_angle", motion_delta_angle_);
+    success &= this->get_parameter("motion_x_variance", motion_x_variance_);
+    success &= this->get_parameter("motion_y_variance", motion_y_variance_);
+    success &= this->get_parameter("motion_angle_variance", motion_angle_variance_);
+    success &= this->get_parameter("resample_ess_threshold", resample_ess_threshold_);
+    success &= this->get_parameter("resample_max_weight_threshold", resample_max_weight_threshold_);
+    success &= this->get_parameter("inject_num_iterations", inject_num_iterations_);
+    success &= this->get_parameter("inject_percentage", inject_percentage_);
+    success &= this->get_parameter("replace_worst_percentage", replace_worst_percentage_);
+    success &= this->get_parameter("estimate_num_particles", estimate_num_particles_);
+
+    if (!success) {
+        RCLCPP_ERROR(this->get_logger(), "One or more parameters failed to load. Check your YAML or launch file.");
+        // Optionally shutdown or throw an exception here
+        return;
+    }
+
+    // Log loaded parameters
+    RCLCPP_INFO(this->get_logger(), "num_particles: %.1f", num_particles_);
+    RCLCPP_INFO(this->get_logger(), "room_size_x: %.2f", room_size_x_);
+    RCLCPP_INFO(this->get_logger(), "room_size_y: %.2f", room_size_y_);
+    RCLCPP_INFO(this->get_logger(), "motion_delta_distance: %.2f", motion_delta_distance_);
+    RCLCPP_INFO(this->get_logger(), "motion_delta_angle: %.2f", motion_delta_angle_);
+    RCLCPP_INFO(this->get_logger(), "motion_x_variance: %.2f", motion_x_variance_);
+    RCLCPP_INFO(this->get_logger(), "motion_y_variance: %.2f", motion_y_variance_);
+    RCLCPP_INFO(this->get_logger(), "motion_angle_variance: %.2f", motion_angle_variance_);
+    RCLCPP_INFO(this->get_logger(), "resample_ess_threshold: %.2f", resample_ess_threshold_);
+    RCLCPP_INFO(this->get_logger(), "resample_max_weight_threshold: %.2f", resample_max_weight_threshold_);
+    RCLCPP_INFO(this->get_logger(), "inject_num_iterations: %d", inject_num_iterations_);
+    RCLCPP_INFO(this->get_logger(), "inject_percentage: %.2f", inject_percentage_);
+    RCLCPP_INFO(this->get_logger(), "replace_worst_percentage: %.2f", replace_worst_percentage_);
+    RCLCPP_INFO(this->get_logger(), "estimate_num_particles: %d", estimate_num_particles_);
+}
 
 // normalize the weights of the particles
 void ParticleFilter::normalizeWeights() {
@@ -158,8 +219,8 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 
     int num_replace = static_cast<int>(num_particles_ * percentage);
 
-    std::uniform_real_distribution<double> dist_x(-ROOM_SIZE_X/2, ROOM_SIZE_X/2);
-    std::uniform_real_distribution<double> dist_y(-ROOM_SIZE_Y/2, ROOM_SIZE_Y/2);
+    std::uniform_real_distribution<double> dist_x(-room_size_x_/2, room_size_x_/2);
+    std::uniform_real_distribution<double> dist_y(-room_size_y_/2, room_size_y_/2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     for (int i = 0; i < num_replace; i++) {
@@ -175,8 +236,8 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
 // replace and inject random particles into the filter
 void ParticleFilter::injectRandomParticles(double percentage){
     //replace random particles
-    std::uniform_real_distribution<double> dist_x(-ROOM_SIZE_X/2, ROOM_SIZE_X/2);
-    std::uniform_real_distribution<double> dist_y(-ROOM_SIZE_Y/2, ROOM_SIZE_Y/2);
+    std::uniform_real_distribution<double> dist_x(-room_size_x_/2, room_size_x_/2);
+    std::uniform_real_distribution<double> dist_y(-room_size_y_/2, room_size_y_/2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     int num_replace = static_cast<int>(num_particles_ * percentage);
@@ -553,8 +614,8 @@ void ParticleFilter::initializeParticles() {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
-    std::uniform_real_distribution<double> dist_x(-ROOM_SIZE_X/2, ROOM_SIZE_X/2);
-    std::uniform_real_distribution<double> dist_y(-ROOM_SIZE_Y/2, ROOM_SIZE_Y/2);
+    std::uniform_real_distribution<double> dist_x(-room_size_x_/2, room_size_x_/2);
+    std::uniform_real_distribution<double> dist_y(-room_size_y_/2, room_size_y_/2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
 
     log_file_.open("log_pf.txt", std::ios::app);
@@ -599,9 +660,9 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_y_odom = odom_y - last_y_;
     double delta_distance = std::hypot(delta_x_odom, delta_y_odom);
 
-    std::uniform_real_distribution<double> noise_x(-MOTION_X_VARIANCE, MOTION_X_VARIANCE);
-    std::uniform_real_distribution<double> noise_y(-MOTION_Y_VARIANCE, MOTION_Y_VARIANCE);
-    std::uniform_real_distribution<double> noise_theta(-MOTION_ANGLE_VARIANCE, MOTION_ANGLE_VARIANCE);
+    std::uniform_real_distribution<double> noise_x(-motion_x_variance_, motion_x_variance_);
+    std::uniform_real_distribution<double> noise_y(-motion_y_variance_, motion_y_variance_);
+    std::uniform_real_distribution<double> noise_theta(-motion_angle_variance_, motion_angle_variance_);
     
     double alpha_odom = atan2(delta_y_odom, delta_x_odom);
     double alpha_robot = alpha_odom - last_theta_;
@@ -610,7 +671,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_theta_odom = odom_theta - last_theta_;
 
     // update particles if significant motion is detected
-    if (delta_distance > 0.15 || std::abs(delta_theta_odom) > 0.15) {
+    if (delta_distance > motion_delta_distance_ || std::abs(delta_theta_odom) > motion_delta_angle_) {
         if (!last_map_msg_) {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
@@ -685,7 +746,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
 
     // Penalize particles outside the room limits
     for ( auto &p : particles_){
-        if(p.x > ROOM_SIZE_X/2 || p.x < -ROOM_SIZE_X/2 || p.y > ROOM_SIZE_Y/2 || p.y < -ROOM_SIZE_Y/2){
+        if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
             p.weight =p.weight/ 2;
         }
     }   
@@ -697,7 +758,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     
     // Replace worst particles if resampling flag is not set
     if (!resample_flag_) {
-        replaceWorstParticles(REPLACE_WORST_PERCENTAGE);
+        replaceWorstParticles(replace_worst_percentage_);
     } else {
         resample_flag_ = false;
     }
@@ -717,13 +778,13 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     switch(type){
         case ResamplingAmount::ESS:
-            if (ess > num_particles_ * RESAMPLE_ESS_THRESHOLD) {
+            if (ess > num_particles_ * resample_ess_threshold_) {
                 RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
                 return;
             }
             break;
         case ResamplingAmount::MAX_WEIGHT:
-            if (max_weight < RESAMPLE_MAX_WEIGHT_THRESHOLD/num_particles_) {
+            if (max_weight < resample_max_weight_threshold_/num_particles_) {
                 RCLCPP_INFO(this->get_logger(), "Skipping resampling, max weight is high.");
                 return;
             }
@@ -756,9 +817,9 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
 
     // Inject random particles base on number of resamples performed
     iterationCounter++;
-    if(iterationCounter == INJECT_NUM_ITERATIONS){
+    if(iterationCounter == inject_num_iterations_){
         RCLCPP_INFO(this->get_logger(), "Injecting random particles.");
-        injectRandomParticles(INJECT_PERCENTAGE);
+        injectRandomParticles(inject_percentage_);
         iterationCounter = 0;
     } 
 
@@ -774,8 +835,8 @@ void ParticleFilter::computeEstimatedPose(){
             return a.weight > b.weight;  
         });
 
-    // Use only the top ESTIMATE_NUM_PARTICLES particles
-    int num_top_particles = std::min(ESTIMATE_NUM_PARTICLES, static_cast<int>(sorted_particles.size()));
+    // Use only the top estimate_num_particles_ particles
+    int num_top_particles = std::min(estimate_num_particles_, static_cast<int>(sorted_particles.size()));
 
     double x_sum = 0, y_sum = 0, theta_sum = 0, theta_x_sum = 0, theta_y_sum = 0, weight_sum = 0;
 

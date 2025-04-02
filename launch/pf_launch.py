@@ -42,7 +42,7 @@ def generate_launch_description():
     )
 
     # Particle filter
-    particle_filter_config_file = os.path.join(localization_dir, 'config', 'particle_filter_params.yaml')
+    particle_filter_config_file = "/home/joao/ros2_ws/src/robot_localization_package/config/particle_filter_params.yaml"
     particle_filter = Node(
         package='robot_localization_package',
         executable='particle_filter',

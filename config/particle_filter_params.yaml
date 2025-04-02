@@ -1,6 +1,6 @@
 particle_filter:
   ros__parameters:
-    num_particles: 1000
+    num_particles: 1000.0
     room_size_x: 4.0
     room_size_y: 4.0
     room_size_z: 0.0
