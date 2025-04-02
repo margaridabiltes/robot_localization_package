@@ -270,8 +270,10 @@ std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorn
 
     std::vector<map_features::FeatureCorner> features_particle;
 
-    double cos_theta = std::cos(p.theta);
-    double sin_theta = std::sin(p.theta);
+    // Convert particle orientation to a quaternion
+    tf2::Quaternion particle_q;
+    particle_q.setRPY(0, 0, p.theta); // Assuming `p.theta` is still in use for particle orientation
+
 
     for (const auto& feature_ptr : global_features_) {
         if (feature_ptr->type == "corner") {
@@ -279,16 +281,24 @@ std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorn
             auto corner_ptr = std::dynamic_pointer_cast<map_features::FeatureCorner>(feature_ptr);
             if (!corner_ptr) continue;
 
-            double map_x = corner_ptr->x;
-            double map_y = corner_ptr->y;
-            double map_z = corner_ptr->z;
-            double corner_theta = corner_ptr->theta;
+            geometry_msgs::msg::Point map_position = corner_ptr->position;
+            geometry_msgs::msg::Quaternion map_orientation = corner_ptr->orientation;
 
-            double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
-            double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
-            double particle_z = 0;
+            // Transform the corner's position to the particle frame
+            double dx = map_position.x - p.x;
+            double dy = map_position.y - p.y;
+            double dz = map_position.z;
 
-            features_particle.emplace_back(particle_x, particle_y, particle_z, corner_theta);
+            tf2::Quaternion map_q(map_orientation.x, map_orientation.y, map_orientation.z, map_orientation.w);
+            tf2::Quaternion relative_q = particle_q.inverse() * map_q;
+
+            tf2::Matrix3x3 rotation_matrix(particle_q.inverse());
+            double particle_x = rotation_matrix[0][0] * dx + rotation_matrix[0][1] * dy + rotation_matrix[0][2] * dz;
+            double particle_y = rotation_matrix[1][0] * dx + rotation_matrix[1][1] * dy + rotation_matrix[1][2] * dz;
+            double particle_z = rotation_matrix[2][0] * dx + rotation_matrix[2][1] * dy + rotation_matrix[2][2] * dz;
+
+
+            features_particle.emplace_back(geometry_msgs::msg::Point{particle_x, particle_y, particle_z}, map_q);
         }
     }
     
@@ -385,7 +395,7 @@ double ParticleFilter::computeAngleLikelihood(double measured_angle, double expe
 }
 
 // compute the likelihood of a corner feature based on distance and angle
-double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta) {
+double ParticleFilter::computeLikelihoodCorner( const Particle &p, const geometry_msgs::msg::Point& position, const geometry_msgs::msg::quaternion& orientation, double sigma_pos, double sigma_theta) {
     std::vector<map_features::FeatureCorner> expected_features = getExpectedFeaturesCorner(p);
 
     double min_dist = std::numeric_limits<double>::max();
@@ -417,7 +427,7 @@ double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_
 }
 
 // compute the likelihood of an object feature based on distance to keypoints of object
-double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type){
+double ParticleFilter::computeLikelihoodObject(const Particle &p, const geometry_msgs::msg::Point& position, const geometry_msgs::msg::quaternion& orientation, double sigma_pos, double sigma_theta, const std::string type){
     map_features::FeatureObject expected_Object = getExpectedFeaturesCloserObject(p, type, noisy_x, noisy_y, noisy_z);
 
     //cumpute the keypoints from the closest object in the particles frame
@@ -450,26 +460,22 @@ double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x
 // decode a feature message received from the topic features into a DecodedMsg structure
 ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feature& msg){
     DecodedMsg feature;
-    
-    feature.x = msg.position.x;
-    feature.y = msg.position.y;
-    feature.z = msg.position.z;
-    feature.type = msg.type;
 
-    tf2::Quaternion q(
-        msg.orientation.x,
-        msg.orientation.y,
-        msg.orientation.z,
-        msg.orientation.w
-    );
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-    feature.theta = yaw; 
+    feature.position.x = msg.position.x;
+    feature.position.y = msg.position.y;
+    feature.position.z = msg.position.z;
+
+    feature.orientation.x = msg.orientation.x;
+    feature.orientation.y = msg.orientation.y;
+    feature.orientation.z = msg.orientation.z;
+    feature.orientation.w = msg.orientation.w;
+
+    feature.type = msg.type;
 
     for (size_t i = 0; i < 3; ++i) {
         for (size_t j = 0; j < 3; ++j) {
             feature.covariance_pos[i][j] = msg.position_covariance[i * 3 + j];
-            feature.covariance_angle[i][j] = msg.orientation_covariance[i * 3 + j];
+            feature.covariance_orientation[i][j] = msg.orientation_covariance[i * 3 + j];
         }
     }
 
@@ -698,6 +704,69 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     publishParticles();
 }
 
+geometry_msgs::msg::Point ParticleFilter::generateNoisyPosition(const geometry_msgs::msg::Point& position, 
+    const std::array<std::array<double, 3>, 3>& covariance) {
+            
+    geometry_msgs::msg::Point noisy_position;
+
+    double sigma_x = std::sqrt(covariance[0][0]);
+    double sigma_y = std::sqrt(covariance[1][1]);
+    double sigma_z = std::sqrt(covariance[2][2]);
+
+    std::normal_distribution<double> noise_x(0.0, sigma_x);
+    std::normal_distribution<double> noise_y(0.0, sigma_y);
+    std::normal_distribution<double> noise_z(0.0, sigma_z);
+
+    noisy_position.x = position.x + noise_x(generator_);
+    noisy_position.y = position.y + noise_y(generator_);
+    noisy_position.z = position.z + noise_z(generator_);
+
+    return noisy_position;
+}
+
+geometry_msgs::msg::Quaternion ParticleFilter::generateNoisyQuaternion(
+    const geometry_msgs::msg::Quaternion& orientation,
+    const std::array<std::array<double, 3>, 3>& covariance_orientation) {
+    
+    // Extract standard deviations for roll, pitch, and yaw
+    double sigma_roll = std::sqrt(covariance_orientation[0][0]);
+    double sigma_pitch = std::sqrt(covariance_orientation[1][1]);
+    double sigma_yaw = std::sqrt(covariance_orientation[2][2]);
+
+    // Generate noise for roll, pitch, and yaw
+    std::normal_distribution<double> noise_roll(0.0, sigma_roll);
+    std::normal_distribution<double> noise_pitch(0.0, sigma_pitch);
+    std::normal_distribution<double> noise_yaw(0.0, sigma_yaw);
+
+    double noisy_roll = noise_roll(generator_);
+    double noisy_pitch = noise_pitch(generator_);
+    double noisy_yaw = noise_yaw(generator_);
+
+    // Convert the original quaternion to roll, pitch, yaw
+    tf2::Quaternion original_q(orientation.x, orientation.y, orientation.z, orientation.w);
+    double original_roll, original_pitch, original_yaw;
+    tf2::Matrix3x3(original_q).getRPY(original_roll, original_pitch, original_yaw);
+
+    // Add noise to the original roll, pitch, and yaw
+    double new_roll = original_roll + noisy_roll;
+    double new_pitch = original_pitch + noisy_pitch;
+    double new_yaw = original_yaw + noisy_yaw;
+
+    // Convert back to a quaternion
+    tf2::Quaternion noisy_q;
+    noisy_q.setRPY(new_roll, new_pitch, new_yaw);
+    noisy_q.normalize(); // Ensure the quaternion remains normalized
+
+    // Convert back to geometry_msgs::msg::Quaternion
+    geometry_msgs::msg::Quaternion noisy_orientation;
+    noisy_orientation.x = noisy_q.x();
+    noisy_orientation.y = noisy_q.y();
+    noisy_orientation.z = noisy_q.z();
+    noisy_orientation.w = noisy_q.w();
+
+    return noisy_orientation;
+}
+
 void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg){
     if (particles_.empty()) {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
@@ -715,28 +784,18 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
         for (const auto &obs_msg : msg->features) {
             DecodedMsg obs = decodeMsg(obs_msg);
 
-            double sigma_x = std::sqrt(obs.covariance_pos[0][0]);  
-            double sigma_y = std::sqrt(obs.covariance_pos[1][1]); 
-            double sigma_z = std::sqrt(obs.covariance_pos[2][2]);
-            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]); 
+            geometry_msgs::msg::Point noisy_position = generateNoisyPosition(obs.position, obs.covariance_pos);
+
+            geometry_msgs::msg::Quaternion noisy_orientation = generateNoisyQuaternion(obs.orientation, obs.covariance_orientation);
+
             double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y ) / 2.0);
-
-            std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
-            std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
-            std::normal_distribution<double> noise_pos_z(0.0, sigma_z);
-            std::normal_distribution<double> noise_theta(0.0, sigma_theta);
                         
-            double noisy_x = obs.x + noise_pos_x(generator_);
-            double noisy_y = obs.y + noise_pos_y(generator_);
-            double noisy_z = obs.z + noise_pos_z(generator_);
-            double measured_theta = obs.theta + noise_theta(generator_);
-
             // Compute likelihood based on feature type
             if(obs.type == "corner"){
-                likelihood+=computeLikelihoodCorner(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta);
+                likelihood+=computeLikelihoodCorner(p, noisy_position, noisy_orientation, sigma_pos, sigma_theta);
             }
             else {
-                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, obs.type);
+                likelihood+=computeLikelihoodObject(p, noisy_position, noisy_orientation, sigma_pos, sigma_theta, obs.type);
             }
 
         }

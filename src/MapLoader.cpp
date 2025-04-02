@@ -20,13 +20,22 @@ void MapLoader::loadToGlobalMap(const std::string& yaml_path) {
 
     for (const auto& f : root["features"]) {
         std::string type = f["type"].as<std::string>();
-        double x = f["position"]["x"].as<double>();
-        double y = f["position"]["y"].as<double>();
-        double z = f["position"]["z"].as<double>();
-        double theta = f["orientation"]["theta"].as<double>();
 
+        // Extract position
+        geometry_msgs::msg::Point position;
+        position.x = f["position"]["x"].as<double>();
+        position.y = f["position"]["y"].as<double>();
+        position.z = f["position"]["z"].as<double>();
+
+        // Extract orientation (quaternion)
+        geometry_msgs::msg::Quaternion orientation;
+        orientation.x = f["orientation"]["x"].as<double>();
+        orientation.y = f["orientation"]["y"].as<double>();
+        orientation.z = f["orientation"]["z"].as<double>();
+        orientation.w = f["orientation"]["w"].as<double>();
+        
         if (type == "corner") {
-            auto feature = std::make_shared<FeatureCorner>(x, y,z, theta);
+            auto feature = std::make_shared<FeatureCorner>(position, orientation);
             addToGlobalMap(feature);
         } else {
             //get keypoints
@@ -38,7 +47,7 @@ void MapLoader::loadToGlobalMap(const std::string& yaml_path) {
                 point.z = kp["z"].as<double>();
                 keypoints.push_back(point);
             }
-            auto feature = std::make_shared<FeatureObject>(x, y, z, theta, type, keypoints);
+            auto feature = std::make_shared<FeatureObject>(position, orientation, type, keypoints);
             addToGlobalMap(feature);
         }
     }
