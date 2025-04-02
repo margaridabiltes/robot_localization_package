@@ -15,11 +15,13 @@ def generate_launch_description():
     localization_dir = get_package_share_directory('robot_localization_package')
     worlds_dir = get_package_share_directory('robot_worlds')
 
+    # World setup
+    world_setup = "4x4_one_box_1xpt5"
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
-    world_file = os.path.join(worlds_dir, 'worlds', '4x4_one_box_1xpt5.wbt')
-    map_yaml = os.path.join(worlds_dir, 'maps', '4x4_one_box_1xpt5.yaml')
-    map_features = os.path.join(worlds_dir, 'feature_maps', '4x4_one_box_1xpt5.yaml')
+    world_file = os.path.join(worlds_dir, 'worlds', world_setup + '.wbt')
+    map_yaml = os.path.join(worlds_dir, 'maps', world_setup + '.yaml')
+    map_features = os.path.join(worlds_dir, 'feature_maps', world_setup + '.yaml')
     rviz_config = os.path.join(worlds_dir, 'rviz', 'corners_orientation.rviz')
 
     # Webots
@@ -40,12 +42,15 @@ def generate_launch_description():
     )
 
     # Particle filter
+    particle_filter_config_file = os.path.join(localization_dir, 'config', 'particle_filter_params.yaml')
     particle_filter = Node(
         package='robot_localization_package',
         executable='particle_filter',
         name='particle_filter',
         output='screen',
-        parameters=[{'map_features': map_features}]
+        parameters=[
+            particle_filter_config_file,
+            {'map_features': map_features}]
     )
 
     # Map server
@@ -56,7 +61,7 @@ def generate_launch_description():
         parameters=[{'yaml_filename': map_yaml}],
         output='screen'
     )
-
+    ## Map server lifecycle manager
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
