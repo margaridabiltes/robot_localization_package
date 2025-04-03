@@ -38,7 +38,11 @@ def generate_launch_description():
         package='robot_worlds',
         executable='fake_detector',
         name='fake_detector',
-        output='screen'
+        output='screen',
+        parameters=[
+            {"map_features": map_features},
+        ]
+
     )
 
     # Particle filter

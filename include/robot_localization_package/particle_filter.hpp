@@ -61,6 +61,7 @@ private:
     struct DecodedMsg {
         double x, y, z, theta;  // Position and orientation
         std::string type;       // Feature type
+        double confidence;      // Confidence level of classification
         std::array<std::array<double, 3>, 3> covariance_pos;   // Position covariance
         std::array<std::array<double, 3>, 3> covariance_angle; // Orientation covariance
     };
@@ -169,7 +170,7 @@ private:
         double x_new, double y_new, double z_new, double theta_new);
         
     double computeLikelihoodCorner(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta);
-    double computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type);
+    double computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence);
 
     // Color weight functions
     std::vector<double> colorFromWeight(double weight) const;

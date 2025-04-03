@@ -1,7 +1,7 @@
 #include "robot_localization_package/particle_filter.hpp"
 
 
-ParticleFilter::ParticleFilter() : Node("particle_filter"), num_particles_(NUM_PARTICLES),
+ParticleFilter::ParticleFilter() : Node("particle_filter"),
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
     msg_odom_base_link_(nullptr), last_map_msg_(nullptr)
 {
@@ -259,6 +259,11 @@ void ParticleFilter::injectRandomParticles(double percentage){
 
 //! auxiliar functions end!//
 
+//! Feature Handling start !//
+
+#pragma region feature handling
+
+
 // store the map message received from the topic
 void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg) {
     last_map_msg_ = msg; 
@@ -417,7 +422,7 @@ double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_
 }
 
 // compute the likelihood of an object feature based on distance to keypoints of object
-double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type){
+double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence){
     map_features::FeatureObject expected_Object = getExpectedFeaturesCloserObject(p, type, noisy_x, noisy_y, noisy_z);
 
     //cumpute the keypoints from the closest object in the particles frame
@@ -444,6 +449,8 @@ double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x
         likelihood += distance_likelihood;
     }
 
+    likelihood *= confidence;
+
     return likelihood;
 }
 
@@ -455,6 +462,7 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
     feature.y = msg.position.y;
     feature.z = msg.position.z;
     feature.type = msg.type;
+    feature.confidence = msg.confidence;
 
     tf2::Quaternion q(
         msg.orientation.x,
@@ -475,12 +483,6 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
 
     return feature;
 }
-
-//! Feature Handling start !//
-
-#pragma region feature handlingnoise
-
-#pragma region feature handling
 
 #pragma endregion feature handling
 
@@ -725,18 +727,20 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
             std::normal_distribution<double> noise_pos_z(0.0, sigma_z);
             std::normal_distribution<double> noise_theta(0.0, sigma_theta);
-                        
+              
+            //! VER ISTO (os noises não são só para o calculo da likelihood?)
             double noisy_x = obs.x + noise_pos_x(generator_);
             double noisy_y = obs.y + noise_pos_y(generator_);
             double noisy_z = obs.z + noise_pos_z(generator_);
             double measured_theta = obs.theta + noise_theta(generator_);
+            // ! ########
 
             // Compute likelihood based on feature type
             if(obs.type == "corner"){
                 likelihood+=computeLikelihoodCorner(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta);
             }
             else {
-                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, obs.type);
+                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, obs.type, obs.confidence);
             }
 
         }
@@ -747,7 +751,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     // Penalize particles outside the room limits
     for ( auto &p : particles_){
         if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
-            p.weight =p.weight/ 2;
+            p.weight = p.weight/ 2;
         }
     }   
    
