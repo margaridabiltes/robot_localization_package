@@ -723,24 +723,24 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             double sigma_theta = std::sqrt(obs.covariance_angle[2][2]); 
             double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y ) / 2.0);
 
-            std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
+            //! VER ISTO (os noises não são só para o calculo da likelihood?)
+            /*std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
             std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
             std::normal_distribution<double> noise_pos_z(0.0, sigma_z);
             std::normal_distribution<double> noise_theta(0.0, sigma_theta);
               
-            //! VER ISTO (os noises não são só para o calculo da likelihood?)
             double noisy_x = obs.x + noise_pos_x(generator_);
             double noisy_y = obs.y + noise_pos_y(generator_);
             double noisy_z = obs.z + noise_pos_z(generator_);
-            double measured_theta = obs.theta + noise_theta(generator_);
+            double measured_theta = obs.theta + noise_theta(generator_); */
             // ! ########
 
             // Compute likelihood based on feature type
             if(obs.type == "corner"){
-                likelihood+=computeLikelihoodCorner(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta);
+                likelihood+=computeLikelihoodCorner(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta);
             }
             else {
-                likelihood+=computeLikelihoodObject(p, noisy_x, noisy_y, noisy_z, measured_theta, sigma_pos, sigma_theta, obs.type, obs.confidence);
+                likelihood+=computeLikelihoodObject(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta, obs.type, obs.confidence);
             }
 
         }
