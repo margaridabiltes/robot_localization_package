@@ -16,7 +16,7 @@ def generate_launch_description():
     worlds_dir = get_package_share_directory('robot_worlds')
 
     # World setup
-    world_setup = "4x4_one_box_1xpt5"
+    world_setup = "4x4_one_cylinder_pt3"
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
     world_file = os.path.join(worlds_dir, 'worlds', world_setup + '.wbt')
