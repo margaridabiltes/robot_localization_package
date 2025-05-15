@@ -86,7 +86,7 @@ private:
     // Map loader and features
     map_features::MapLoader map_loader_;
     std::vector<map_features::FeaturePtr> global_features_;
-    std::string map_features_;
+    std::string map_features_, map_yaml_, map_pgm_;
     double room_size_x_, room_size_y_;
     
     // Particle filter variables
@@ -131,6 +131,7 @@ private:
     std::vector<std::pair<double, std::vector<double>>> ColorWeightLookup;
 
     // Initialization
+    void initializeParticles_pgm();
     void initializeParticles();
 
     // Particle filter steps

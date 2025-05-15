@@ -1,5 +1,44 @@
 #include "robot_localization_package/particle_filter.hpp"
 
+struct PGMImage {
+    int width;
+    int height;
+    int max_val;
+    std::vector<uint8_t> data;
+
+    void load(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) throw std::runtime_error("Could not open PGM file");
+
+        std::string line;
+        std::getline(file, line);
+        if (line != "P5") throw std::runtime_error("Only binary PGM (P5) supported");
+
+        // Skip comments
+        do {
+            std::getline(file, line);
+        } while (line[0] == '#');
+
+        std::stringstream ss(line);
+        ss >> width >> height;
+
+        file >> max_val;
+        file.get();  // consume the newline
+
+        data.resize(width * height);
+        file.read(reinterpret_cast<char*>(data.data()), data.size());
+    }
+
+    uint8_t pixel(int x, int y) const {
+        return data[y * width + x];
+    }
+};
+
+std::tuple<double, double> pixelToWorld(int x_pix, int y_pix, double resolution, const std::vector<double>& origin, int image_height) {
+    double x = origin[0] + (x_pix + 0.5) * resolution;
+    double y = origin[1] + (image_height - y_pix - 0.5) * resolution;  // y flipped
+    return {x, y};
+}
 
 ParticleFilter::ParticleFilter() : Node("particle_filter"),
     last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
@@ -12,7 +51,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
     loadParameters();
     
     // Retrieve the map_features parameter passed from the launch file
-    this->declare_parameter("map_features", std::string(""));
+
     this->get_parameter("map_features", map_features_);
 
     if (map_features_.empty()) {
@@ -44,18 +83,19 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
 
     // Create a timer to publish the estimated pose and particles
     timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
+    
+    // Initialize the color pallete for the particles weights
+    computeColorWeightLookup();
+    
+    // Initialize the particles
+    initializeParticles_pgm();
 
     while (rclcpp::ok() && !last_map_msg_) {
-        RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
+        //RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
         rclcpp::spin_some(this->get_node_base_interface());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // Initialize the particles
-    initializeParticles();
-
-    // Initialize the color pallete for the particles weights
-    computeColorWeightLookup();
 
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
 
@@ -84,6 +124,9 @@ void ParticleFilter::loadParameters() {
     this->declare_parameter("inject_percentage", INJECT_PERCENTAGE);
     this->declare_parameter("replace_worst_percentage", REPLACE_WORST_PERCENTAGE);
     this->declare_parameter("estimate_num_particles", ESTIMATE_NUM_PARTICLES);
+    this->declare_parameter("map_features", std::string(""));
+    this->declare_parameter("map_yaml", std::string(""));
+    this->declare_parameter("map_pgm", std::string(""));
 
     success &= this->get_parameter("num_particles", num_particles_);
     success &= this->get_parameter("room_size_x", room_size_x_);
@@ -99,6 +142,9 @@ void ParticleFilter::loadParameters() {
     success &= this->get_parameter("inject_percentage", inject_percentage_);
     success &= this->get_parameter("replace_worst_percentage", replace_worst_percentage_);
     success &= this->get_parameter("estimate_num_particles", estimate_num_particles_);
+    success &= this->get_parameter("map_features", map_features_);
+    success &= this->get_parameter("map_yaml", map_yaml_);
+    success &= this->get_parameter("map_pgm", map_pgm_);
 
     if (!success) {
         RCLCPP_ERROR(this->get_logger(), "One or more parameters failed to load. Check your YAML or launch file.");
@@ -121,6 +167,11 @@ void ParticleFilter::loadParameters() {
     RCLCPP_INFO(this->get_logger(), "inject_percentage: %.2f", inject_percentage_);
     RCLCPP_INFO(this->get_logger(), "replace_worst_percentage: %.2f", replace_worst_percentage_);
     RCLCPP_INFO(this->get_logger(), "estimate_num_particles: %d", estimate_num_particles_);
+    RCLCPP_INFO(this->get_logger(), "map_features: %s", map_features_.c_str()); 
+    RCLCPP_INFO(this->get_logger(), "map_yaml: %s", map_yaml_.c_str()); 
+    RCLCPP_INFO(this->get_logger(), "map_pgm: %s", map_pgm_.c_str()); 
+
+
 }
 
 // normalize the weights of the particles
@@ -175,6 +226,8 @@ void ParticleFilter::publishParticles() {
 
     visualization_msgs::msg::MarkerArray marker_array;
     int i = 0;
+
+
 
     for (const auto &p : particles_) {
         visualization_msgs::msg::Marker marker;
@@ -267,6 +320,7 @@ void ParticleFilter::injectRandomParticles(double percentage){
 // store the map message received from the topic
 void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg) {
     last_map_msg_ = msg; 
+    RCLCPP_INFO(this->get_logger(), "Received features");
     new_map = true; 
 }
 
@@ -611,6 +665,70 @@ void ParticleFilter::residualResample() {
 
 //! Particle Filter Functions !//
 #pragma region pf functions
+void ParticleFilter::initializeParticles_pgm() {
+    
+    // Load map.yaml
+    YAML::Node config = YAML::LoadFile(map_yaml_);
+    double resolution = config["resolution"].as<double>();
+    std::vector<double> origin = config["origin"].as<std::vector<double>>();
+    int negate = config["negate"] ? config["negate"].as<int>() : 0;
+
+    // Load PGM
+    PGMImage pgm;
+    pgm.load(map_pgm_);
+
+    // Collect free pixels
+    std::vector<std::pair<int, int>> free_pixels;
+    for (int y = 0; y < pgm.height; ++y) {
+        for (int x = 0; x < pgm.width; ++x) {
+            uint8_t val = pgm.pixel(x, y);
+            bool is_free = (negate == 0) ? (val >= 254) : (val <= 1);
+            if (is_free) {
+                free_pixels.emplace_back(x, y);
+            }
+        }
+    }
+
+    if (free_pixels.size() < static_cast<size_t>(num_particles_)) {
+        throw std::runtime_error("Not enough free pixels");
+    }
+
+    // Sample random particles
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> index_dist(0, free_pixels.size() - 1);
+    std::uniform_real_distribution<> theta_dist(-M_PI, M_PI);
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+    double init_weight = 1.0 / num_particles_;
+
+    particles_.resize(num_particles_);
+    for (auto &p : particles_) {
+        auto [x_pix, y_pix] = free_pixels[index_dist(gen)];
+        auto [x, y] = pixelToWorld(x_pix, y_pix, resolution, origin, pgm.height);
+
+        geometry_msgs::msg::Pose pose;
+        p.x = x;
+        p.y = y;
+        p.theta = dist_theta(generator_);
+        p.weight = init_weight;
+
+
+    }
+
+    while(1){
+        publishParticles();
+        rclcpp::spin_some(this->get_node_base_interface());
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+
+   /*  for (auto &p : particles_) {
+        p.x = dist_x(generator_);
+        p.y = dist_y(generator_);
+        p.theta = dist_theta(generator_);
+        p.weight = 1.0 / num_particles_;
+    }  */
+
+}
 
 void ParticleFilter::initializeParticles() {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
