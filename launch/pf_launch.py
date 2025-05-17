@@ -119,16 +119,16 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        rviz,
+        #rviz,
         #webots,
         #robot_controller,
         #fake_detector,
-        #corner_detector,
+        ##corner_detector,
         particle_filter,
         #tf_map_to_odom,
         #tf_base_to_lidar,
-        map_server,
-        lifecycle_manager,
+        #map_server,
+        #lifecycle_manager,
         #teleop,
         #RegisterEventHandler(
         #    OnProcessExit(

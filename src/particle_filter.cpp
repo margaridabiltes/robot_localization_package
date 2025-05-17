@@ -1,6 +1,6 @@
 #include "robot_localization_package/particle_filter.hpp"
 
-struct PGMImage {
+struct PGMImage2 {
     int width;
     int height;
     int max_val;
@@ -14,7 +14,6 @@ struct PGMImage {
         std::getline(file, line);
         if (line != "P5") throw std::runtime_error("Only binary PGM (P5) supported");
 
-        // Skip comments
         do {
             std::getline(file, line);
         } while (line[0] == '#');
@@ -36,8 +35,31 @@ struct PGMImage {
 
 std::tuple<double, double> pixelToWorld(int x_pix, int y_pix, double resolution, const std::vector<double>& origin, int image_height) {
     double x = origin[0] + (x_pix + 0.5) * resolution;
-    double y = origin[1] + (image_height - y_pix - 0.5) * resolution;  // y flipped
+    double y = origin[1] + (image_height - y_pix - 0.5) * resolution; 
     return {x, y};
+}
+
+std::tuple<int, int> worldToPixel(double x_world, double y_world, double resolution, const std::vector<double>& origin, int image_height) {
+    int x_pix = static_cast<int>((x_world - origin[0]) / resolution - 0.5);
+    int y_pix = image_height - 1 - static_cast<int>((y_world - origin[1]) / resolution - 0.5);
+    return {x_pix, y_pix};
+}
+
+// Check if particle is in white part of pgm
+bool isParticleInFreeSpace(double x_world, double y_world, const PGMImage& pgm, double resolution, const std::vector<double>& origin) {
+    // Convert world to pixel coordinates
+    int x_pix = static_cast<int>((x_world - origin[0]) / resolution);
+    int y_pix = pgm.height - 1 - static_cast<int>((y_world - origin[1]) / resolution); // y inverted
+
+    // Check bounds
+    if (x_pix < 0 || x_pix >= pgm.width || y_pix < 0 || y_pix >= pgm.height) {
+        return false; // out of bounds = not free
+    }
+
+    uint8_t val = pgm.pixel(x_pix, y_pix);
+
+    // Interpret pixel value
+    return val >= 254; // white = free
 }
 
 ParticleFilter::ParticleFilter() : Node("particle_filter"),
@@ -86,7 +108,10 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
     
     // Initialize the color pallete for the particles weights
     computeColorWeightLookup();
-    
+
+    // Load PGM and calculate free space
+    calculateFreeSpaceFromPGM();
+
     // Initialize the particles
     initializeParticles_pgm();
 
@@ -105,6 +130,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
 
 #pragma region auxiliar functions
 
+// load the paramaters for the node
 void ParticleFilter::loadParameters() {
     RCLCPP_INFO(this->get_logger(), "Loading particle filter parameters...");
 
@@ -172,6 +198,30 @@ void ParticleFilter::loadParameters() {
     RCLCPP_INFO(this->get_logger(), "map_pgm: %s", map_pgm_.c_str()); 
 
 
+}
+
+void ParticleFilter::calculateFreeSpaceFromPGM() {
+    // Load map.yaml
+    YAML::Node config = YAML::LoadFile(map_yaml_);
+    resolution = config["resolution"].as<double>();
+    origin = config["origin"].as<std::vector<double>>();
+    int negate = config["negate"] ? config["negate"].as<int>() : 0;
+
+    // Load PGM
+    //PGMImage pgm;
+    pgm.load(map_pgm_);
+
+    // Collect free pixels
+    //std::vector<std::pair<int, int>> free_pixels;
+    for (int y = 0; y < pgm.height; ++y) {
+        for (int x = 0; x < pgm.width; ++x) {
+            uint8_t val = pgm.pixel(x, y);
+            bool is_free = (negate == 0) ? (val >= 254) : (val <= 1);
+            if (is_free) {
+                free_pixels.emplace_back(x, y);
+            }
+        }
+    }
 }
 
 // normalize the weights of the particles
@@ -266,7 +316,7 @@ void ParticleFilter::publishParticles() {
 }
 
 // replace the worst particles with random ones
-void ParticleFilter::replaceWorstParticles( double percentage ) {
+void ParticleFilter::replaceWorstParticles(double percentage ) {
     std::sort(particles_.begin(), particles_.end(), 
               [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
 
@@ -281,6 +331,35 @@ void ParticleFilter::replaceWorstParticles( double percentage ) {
         particles_[i].y = dist_y(generator_);
         particles_[i].theta = dist_theta(generator_);
         particles_[i].weight = 1.0 / num_particles_; 
+    }
+
+    normalizeWeights();
+}
+
+// replace the worst particles with random ones in white part of pgm (free space)
+void ParticleFilter::replaceWorstParticles_pgm(double percentage) {
+    std::sort(particles_.begin(), particles_.end(), 
+              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
+
+    int num_replace = static_cast<int>(num_particles_ * percentage);
+
+    // Sample random particles
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> index_dist(0, free_pixels.size() - 1);
+
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+
+    double init_weight = 1.0 / num_particles_;
+
+    for (int i = 0; i < num_replace; i++) {
+        auto [x_pix, y_pix] = free_pixels[index_dist(gen)];
+        auto [x, y] = pixelToWorld(x_pix, y_pix, resolution, origin, pgm.height);
+
+        particles_[i].x = x;
+        particles_[i].y = y;
+        particles_[i].theta = dist_theta(generator_);
+        particles_[i].weight = init_weight; 
     }
 
     normalizeWeights();
@@ -305,6 +384,35 @@ void ParticleFilter::injectRandomParticles(double percentage){
         particles_[index].y = dist_y(generator_);
         particles_[index].theta = dist_theta(generator_);
         particles_[index].weight = 1.0 / num_particles_;
+    }
+}
+
+// replace and inject random particles into the filter in white part of pgm (free space)
+void ParticleFilter::injectRandomParticles_pgm(double percentage){
+    //replace random particles
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> index_dist(0, free_pixels.size() - 1);
+
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+
+    int num_replace = static_cast<int>(num_particles_ * percentage);
+
+    std::vector<int> random_indices(num_replace);
+    for (int &index : random_indices) {
+        index = rand() % static_cast<int>(num_particles_);
+    }
+
+    double init_weight = 1.0 / num_particles_;
+
+    for (int i : random_indices) {
+        auto [x_pix, y_pix] = free_pixels[index_dist(gen)];
+        auto [x, y] = pixelToWorld(x_pix, y_pix, resolution, origin, pgm.height);
+
+        particles_[i].x = x;
+        particles_[i].y = y;
+        particles_[i].theta = dist_theta(generator_);
+        particles_[i].weight = init_weight; 
     }
 }
 
@@ -665,34 +773,8 @@ void ParticleFilter::residualResample() {
 
 //! Particle Filter Functions !//
 #pragma region pf functions
+
 void ParticleFilter::initializeParticles_pgm() {
-    
-    // Load map.yaml
-    YAML::Node config = YAML::LoadFile(map_yaml_);
-    double resolution = config["resolution"].as<double>();
-    std::vector<double> origin = config["origin"].as<std::vector<double>>();
-    int negate = config["negate"] ? config["negate"].as<int>() : 0;
-
-    // Load PGM
-    PGMImage pgm;
-    pgm.load(map_pgm_);
-
-    // Collect free pixels
-    std::vector<std::pair<int, int>> free_pixels;
-    for (int y = 0; y < pgm.height; ++y) {
-        for (int x = 0; x < pgm.width; ++x) {
-            uint8_t val = pgm.pixel(x, y);
-            bool is_free = (negate == 0) ? (val >= 254) : (val <= 1);
-            if (is_free) {
-                free_pixels.emplace_back(x, y);
-            }
-        }
-    }
-
-    if (free_pixels.size() < static_cast<size_t>(num_particles_)) {
-        throw std::runtime_error("Not enough free pixels");
-    }
-
     // Sample random particles
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -711,15 +793,23 @@ void ParticleFilter::initializeParticles_pgm() {
         p.y = y;
         p.theta = dist_theta(generator_);
         p.weight = init_weight;
-
-
     }
 
-    while(1){
+    /* while(1){
         publishParticles();
         rclcpp::spin_some(this->get_node_base_interface());
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
+    } */
+
+    /* if (free_pixels.size() < static_cast<size_t>(num_particles_)) {
+        throw std::runtime_error("Not enough free pixels");
+    } */
+
+    /* while(1){
+        publishParticles();
+        rclcpp::spin_some(this->get_node_base_interface());
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    } */
 
    /*  for (auto &p : particles_) {
         p.x = dist_x(generator_);
@@ -868,9 +958,15 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
 
     // Penalize particles outside the room limits
     for ( auto &p : particles_){
-        if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
+        /* if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
             p.weight = p.weight/ 2;
-        }
+        } */
+       bool penalize = isParticleInFreeSpace(p.x, p.y, pgm, resolution, origin);
+       
+       if(penalize){
+        p.weight = p.weight/2;
+       }
+
     }   
    
     normalizeWeights();
@@ -880,7 +976,8 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     
     // Replace worst particles if resampling flag is not set
     if (!resample_flag_) {
-        replaceWorstParticles(replace_worst_percentage_);
+        //replaceWorstParticles(replace_worst_percentage_);
+        replaceWorstParticles_pgm(replace_worst_percentage_);
     } else {
         resample_flag_ = false;
     }
@@ -941,7 +1038,9 @@ void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod m
     iterationCounter++;
     if(iterationCounter == inject_num_iterations_){
         RCLCPP_INFO(this->get_logger(), "Injecting random particles.");
-        injectRandomParticles(inject_percentage_);
+        //injectRandomParticles(inject_percentage_);
+        injectRandomParticles_pgm(inject_percentage_);
+
         iterationCounter = 0;
     } 
 

@@ -44,6 +44,40 @@
 
 #define ESTIMATE_NUM_PARTICLES 10
 
+struct PGMImage {
+    int width;
+    int height;
+    int max_val;
+    std::vector<uint8_t> data;
+
+    void load(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) throw std::runtime_error("Could not open PGM file");
+
+        std::string line;
+        std::getline(file, line);
+        if (line != "P5") throw std::runtime_error("Only binary PGM (P5) supported");
+
+        // Skip comments
+        do {
+            std::getline(file, line);
+        } while (line[0] == '#');
+
+        std::stringstream ss(line);
+        ss >> width >> height;
+
+        file >> max_val;
+        file.get();  // consume the newline
+
+        data.resize(width * height);
+        file.read(reinterpret_cast<char*>(data.data()), data.size());
+    }
+
+    uint8_t pixel(int x, int y) const {
+        return data[y * width + x];
+    }
+};
+
 
 class ParticleFilter : public rclcpp::Node {
 public:
@@ -130,6 +164,16 @@ private:
     // Color weight lookup
     std::vector<std::pair<double, std::vector<double>>> ColorWeightLookup;
 
+    // Variables for automatic particle initialization from pgm
+    PGMImage pgm;
+    std::vector<std::pair<int, int>> free_pixels;
+    double resolution;
+    std::vector<double> origin;
+    
+    // PGM loader
+    void calculateFreeSpaceFromPGM();
+
+
     // Initialization
     void initializeParticles_pgm();
     void initializeParticles();
@@ -149,13 +193,16 @@ private:
     void normalizeWeights();
     double maxWeight();
     void replaceWorstParticles(double percentage);
+    void replaceWorstParticles_pgm(double percentage);
     void injectRandomParticles(double percentage);
+    void injectRandomParticles_pgm(double percentage);
 
     // Pose estimation
     void computeEstimatedPose();
     void publishEstimatedPose();
 
-    // Particle visualization
+    // Particle handling
+    void createParticles(double num_particles);
     void publishParticles();
 
     // Feature handling
