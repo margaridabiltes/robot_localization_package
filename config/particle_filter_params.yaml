@@ -1,6 +1,6 @@
 particle_filter:
   ros__parameters:
-    num_particles: 10000.0
+    num_particles: 1.0
     room_size_x: 1.5
     room_size_y: 1.5
     room_size_z: 0.0
@@ -8,7 +8,7 @@ particle_filter:
     motion_delta_angle: 0.1
     motion_x_variance: 0.05
     motion_y_variance: 0.05
-    motion_angle_variance: 0.08
+    motion_angle_variance: 0.05
     resample_ess_threshold: 0.5
     resample_max_weight_threshold: 4.0
     inject_num_iterations: 10

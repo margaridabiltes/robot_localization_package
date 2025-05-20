@@ -97,7 +97,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
     );
 
     // Create publishers for the estimated pose and particles
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/estimated_pose", 10);
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/estimated_pose", 10);
     particles_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/particles", 10);
 
     // Create a transform broadcaster
@@ -1101,55 +1101,37 @@ void ParticleFilter::publishEstimatedPose() {
         return;
     }
 
-    geometry_msgs::msg::PoseStamped pose_msg;
+    geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
     pose_msg.header.stamp = this->get_clock()->now();
     pose_msg.header.frame_id = "map";
-    pose_msg.pose.position.x = x_last_final;
-    pose_msg.pose.position.y = y_last_final;
+    pose_msg.pose.pose.position.x = x_last_final;
+    pose_msg.pose.pose.position.y = y_last_final;
 
     tf2::Quaternion q;
     q.setRPY(0, 0, theta_last_final);
-    pose_msg.pose.orientation.x = q.x();
-    pose_msg.pose.orientation.y = q.y();
-    pose_msg.pose.orientation.z = q.z();
-    pose_msg.pose.orientation.w = q.w();
+    pose_msg.pose.pose.orientation.x = q.x();
+    pose_msg.pose.pose.orientation.y = q.y();
+    pose_msg.pose.pose.orientation.z = q.z();
+    pose_msg.pose.pose.orientation.w = q.w();
     pose_pub_->publish(pose_msg);
 
     // Publish `map -> base_link` transform
-    geometry_msgs::msg::TransformStamped map_to_odom_tf;
-    map_to_odom_tf.header.stamp = this->get_clock()->now();
-    map_to_odom_tf.header.frame_id = "map";
-    map_to_odom_tf.child_frame_id = "odom";
-
-    double odom_x = msg_odom_base_link_->pose.pose.position.x;
-    double odom_y = msg_odom_base_link_->pose.pose.position.y;
-
-    tf2::Quaternion odom_base_link_q(
-        msg_odom_base_link_->pose.pose.orientation.x,
-        msg_odom_base_link_->pose.pose.orientation.y,
-        msg_odom_base_link_->pose.pose.orientation.z,
-        msg_odom_base_link_->pose.pose.orientation.w
-    );
+    geometry_msgs::msg::TransformStamped map_to_pose_tf;
+    map_to_pose_tf.header.stamp = this->get_clock()->now();
+    map_to_pose_tf.header.frame_id = "map";
+    map_to_pose_tf.child_frame_id = "estimated_pose";
 
     // Calculate map -> odom transform
-    map_to_odom_tf.transform.translation.x = x_last_final - odom_x;
-    map_to_odom_tf.transform.translation.y = y_last_final - odom_y;
-    map_to_odom_tf.transform.translation.z = 0.0;
+    map_to_pose_tf.transform.translation.x = x_last_final;
+    map_to_pose_tf.transform.translation.y = y_last_final;
+    map_to_pose_tf.transform.translation.z = 0.0;
 
-    tf2::Quaternion q_map, q_odom, q_correction;
-    q_map.setRPY(0, 0, theta_last_final);
-    q_odom.setX(odom_base_link_q.x());
-    q_odom.setY(odom_base_link_q.y());
-    q_odom.setZ(odom_base_link_q.z());
-    q_odom.setW(odom_base_link_q.w());
+    map_to_pose_tf.transform.rotation.x = q.x();
+    map_to_pose_tf.transform.rotation.y = q.y();
+    map_to_pose_tf.transform.rotation.z = q.z();
+    map_to_pose_tf.transform.rotation.w = q.w();
 
-    q_correction = q_map * q_odom.inverse();
-    map_to_odom_tf.transform.rotation.x = q_correction.x();
-    map_to_odom_tf.transform.rotation.y = q_correction.y();
-    map_to_odom_tf.transform.rotation.z = q_correction.z();
-    map_to_odom_tf.transform.rotation.w = q_correction.w();
-
-    //tf_broadcaster_->sendTransform(map_to_odom_tf);
+    tf_broadcaster_->sendTransform(map_to_pose_tf);
 
     RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }

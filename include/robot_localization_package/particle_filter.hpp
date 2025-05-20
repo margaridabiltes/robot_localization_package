@@ -141,7 +141,7 @@ private:
     std::ofstream log_file_;
 
     // ROS2 publishers, subscribers, and timers
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr particles_pub_;
     rclcpp::Subscription<robot_msgs::msg::FeatureArray>::SharedPtr feature_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;

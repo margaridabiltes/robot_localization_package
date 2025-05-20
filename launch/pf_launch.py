@@ -16,7 +16,7 @@ def generate_launch_description():
     worlds_dir = get_package_share_directory('robot_worlds')
 
     # World setup
-    world_setup = "iilab"
+    world_setup = "square_no_box"
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
     world_file = os.path.join(worlds_dir, 'worlds', world_setup, world_setup + '.wbt')
@@ -118,26 +118,35 @@ def generate_launch_description():
         prefix='gnome-terminal --'
     )
 
+    # Path Tracker
+    path_tracker = Node(
+        package='robot_worlds',
+        executable='path_tracker',
+        name='path_tracker',
+        output='screen'
+    )
+
     return LaunchDescription([
-        #rviz,
-        #webots,
-        #robot_controller,
-        #fake_detector,
-        ##corner_detector,
+        rviz,
+        webots,
+        robot_controller,
+        fake_detector,
+        path_tracker,
+        #corner_detector,
         particle_filter,
-        #tf_map_to_odom,
-        #tf_base_to_lidar,
-        #map_server,
-        #lifecycle_manager,
-        #teleop,
-        #RegisterEventHandler(
-        #    OnProcessExit(
-        #        target_action=webots,
-        #        on_exit=[
-        #            launch.actions.EmitEvent(
-        #                event=Shutdown()
-        #            )
-        #        ]
-        #    )
-        #)
+        tf_map_to_odom,
+        tf_base_to_lidar,
+        map_server,
+        lifecycle_manager,
+        teleop,
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=webots,
+                on_exit=[
+                    launch.actions.EmitEvent(
+                        event=Shutdown()
+                    )
+                ]
+            )
+        )
     ])
