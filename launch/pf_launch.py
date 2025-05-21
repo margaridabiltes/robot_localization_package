@@ -16,7 +16,7 @@ def generate_launch_description():
     worlds_dir = get_package_share_directory('robot_worlds')
 
     # World setup
-    world_setup = "square_no_box"
+    world_setup = "iilab"
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
     world_file = os.path.join(worlds_dir, 'worlds', world_setup, world_setup + '.wbt')
@@ -97,7 +97,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='base_to_lidar_broadcaster',
-        arguments=['0', '0', '0', '0', '0', '0', 'base_footprint_real', 'lidar2D']
+        arguments=['0', '0', '0', '0', '0', '0', 'base_footprint', 'lidar2D']
     )
 
     # RViz
@@ -131,7 +131,7 @@ def generate_launch_description():
         webots,
         robot_controller,
         fake_detector,
-        path_tracker,
+        #path_tracker,
         #corner_detector,
         particle_filter,
         tf_map_to_odom,

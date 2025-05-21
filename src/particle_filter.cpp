@@ -558,7 +558,7 @@ double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_
     double min_dist = std::numeric_limits<double>::max();
     map_features::FeatureCorner best_corner(0, 0,0, 0);
 
-    double likelihood = 0.0;
+    double likelihood = 1.0;
     
     for (const auto &exp : expected_features) {
         double dist = std::hypot(noisy_x - exp.x, noisy_y - exp.y);
@@ -574,10 +574,10 @@ double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_
     double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
 
     if(with_angle_){
-        likelihood += (angle_likelihood + distance_likelihood);
+        likelihood *= (angle_likelihood * distance_likelihood);
     }
     else{
-        likelihood += distance_likelihood;
+        likelihood *= distance_likelihood; 
     }
 
     return likelihood;
@@ -961,7 +961,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
         /* if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
             p.weight = p.weight/ 2;
         } */
-       bool penalize = isParticleInFreeSpace(p.x, p.y, pgm, resolution, origin);
+       bool penalize = !isParticleInFreeSpace(p.x, p.y, pgm, resolution, origin);
        
        if(penalize){
         p.weight = p.weight/2;
