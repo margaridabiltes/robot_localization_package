@@ -12,17 +12,22 @@ from launch.events import Shutdown
 
 def generate_launch_description():
     # Paths from both packages
-    localization_dir = get_package_share_directory('robot_localization_package')
+    localization_dir = get_package_share_directory(
+        'robot_localization_package')
     worlds_dir = get_package_share_directory('robot_worlds')
 
     # World setup
     world_setup = "iilab"
     # Paths to files
     robot_urdf = os.path.join(worlds_dir, 'urdf', 'robot.urdf')
-    world_file = os.path.join(worlds_dir, 'worlds', world_setup, world_setup + '.wbt')
-    map_yaml = os.path.join(worlds_dir, 'maps', world_setup, world_setup + '.yaml')
-    map_pgm = os.path.join(worlds_dir, 'maps', world_setup, world_setup + '.pgm')
-    map_features = os.path.join(worlds_dir, 'feature_maps', world_setup + '.yaml')
+    world_file = os.path.join(worlds_dir, 'worlds',
+                              world_setup, world_setup + '.wbt')
+    map_yaml = os.path.join(
+        worlds_dir, 'maps', world_setup, world_setup + '.yaml')
+    map_pgm = os.path.join(
+        worlds_dir, 'maps', world_setup, world_setup + '.pgm')
+    map_features = os.path.join(
+        worlds_dir, 'feature_maps', world_setup + '.yaml')
     rviz_config = os.path.join(worlds_dir, 'rviz', 'corners_orientation.rviz')
 
     # Webots
@@ -34,28 +39,29 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_urdf}]
     )
 
-      # Fake detector
-    fake_detector = Node(
-        package='robot_worlds',
-        executable='fake_detector',
-        name='fake_detector',
-        output='screen',
-        parameters=[
-            {"map_features": map_features},
-        ]
-
+    send_scan = Node(
+        package='com_perception_package',
+        executable='send_scan_node',
+        name='send_scan_node',
+        output='screen'
     )
 
-    # Ransac corner Detector
-    corner_detector = Node(
-        package="robot_feature_detector",
-        executable="corners",
-        name="corners",
-        output="screen"
+    recv_results = Node(
+        package='com_perception_package',
+        executable='recv_results_node',
+        name='recv_results_node',
+        output='screen'
+    )
+
+    perception = Node(
+        package='com_perception_package',
+        executable='perception_node',
+        name='perception_node',
+        output='screen'
     )
 
     # Particle filter
-    particle_filter_config_file = "/home/joao/ros2_ws/src/robot_localization_package/config/particle_filter_params.yaml"
+    particle_filter_config_file = "/home/rui/ros_ws/src/robot_localization_package/config/particle_filter_params.yaml"
     particle_filter = Node(
         package='robot_localization_package',
         executable='particle_filter',
@@ -76,7 +82,8 @@ def generate_launch_description():
         parameters=[{'yaml_filename': map_yaml}],
         output='screen'
     )
-    ## Map server lifecycle manager
+
+    # Map server lifecycle manager
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
@@ -97,7 +104,8 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='base_to_lidar_broadcaster',
-        arguments=['0', '0', '0', '0', '0', '0', 'base_footprint_real', 'lidar2D']
+        arguments=['0', '0', '0', '0', '0', '0',
+                   'base_footprint_real', 'lidar2D']
     )
 
     # RViz
@@ -119,25 +127,26 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        #rviz,
-        #webots,
-        #robot_controller,
-        #fake_detector,
-        ##corner_detector,
-        particle_filter,
-        #tf_map_to_odom,
-        #tf_base_to_lidar,
-        #map_server,
-        #lifecycle_manager,
-        #teleop,
-        #RegisterEventHandler(
-        #    OnProcessExit(
-        #        target_action=webots,
-        #        on_exit=[
-        #            launch.actions.EmitEvent(
-        #                event=Shutdown()
-        #            )
-        #        ]
-        #    )
-        #)
+        rviz,
+        webots,
+        robot_controller,
+        # particle_filter,
+        send_scan,
+        recv_results,
+        perception,
+        tf_map_to_odom,
+        tf_base_to_lidar,
+        map_server,
+        lifecycle_manager,
+        teleop,
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=webots,
+                on_exit=[
+                    launch.actions.EmitEvent(
+                        event=Shutdown()
+                    )
+                ]
+            )
+        )
     ])
