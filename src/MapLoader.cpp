@@ -1,55 +1,47 @@
 #include "robot_localization_package/MapLoader.hpp"
 
-namespace map_features {
+namespace map_features
+{
 
-// Static member definition
-std::vector<FeaturePtr> MapLoader::global_features_;
+    // Static member definition
+    std::vector<FeaturePtr> MapLoader::global_features_;
 
-void MapLoader::loadToGlobalMap(const std::string& yaml_path) {
+    void MapLoader::loadToGlobalMap(const std::string &yaml_path)
+    {
         // Check if the file exists
         std::ifstream file(yaml_path);
-        if (!file.good()) {
+        if (!file.good())
+        {
             throw std::runtime_error("YAML file not found: " + yaml_path);
         }
-    
+
         // Load the YAML file
         YAML::Node root = YAML::LoadFile(yaml_path);
-        if (!root["features"]) {
+        if (!root["features"])
+        {
             throw std::runtime_error("No 'features' key found in YAML file: " + yaml_path);
         }
 
-    for (const auto& f : root["features"]) {
-        std::string type = f["type"].as<std::string>();
-        double x = f["position"]["x"].as<double>();
-        double y = f["position"]["y"].as<double>();
-        double z = f["position"]["z"].as<double>();
-        double theta = f["orientation"]["theta"].as<double>();
+        for (const auto &f : root["features"])
+        {
+            std::string type = f["type"].as<std::string>();
+            double x = f["position"]["x"].as<double>();
+            double y = f["position"]["y"].as<double>();
+            double theta = f["orientation"]["theta"].as<double>();
 
-        if (type == "corner") {
-            auto feature = std::make_shared<FeatureCorner>(x, y,z, theta);
-            addToGlobalMap(feature);
-        } else {
-            //get keypoints
-            std::vector<geometry_msgs::msg::Point> keypoints;
-            for (const auto& kp : f["keypoints"]) {
-                geometry_msgs::msg::Point point;
-                point.x = kp["x"].as<double>();
-                point.y = kp["y"].as<double>();
-                point.z = kp["z"].as<double>();
-                keypoints.push_back(point);
-            }
-            auto feature = std::make_shared<FeatureObject>(x, y, z, theta, type, keypoints);
+            auto feature = std::make_shared<Feature>(x, y, theta, type);
             addToGlobalMap(feature);
         }
     }
-}
 
-void MapLoader::addToGlobalMap(FeaturePtr feature) {
-    global_features_.emplace_back(feature);
-}
+    void MapLoader::addToGlobalMap(FeaturePtr feature)
+    {
+        global_features_.emplace_back(feature);
+    }
 
-const std::vector<FeaturePtr>& MapLoader::getGlobalFeatureMap() {
-    return global_features_;
-}
+    const std::vector<FeaturePtr> &MapLoader::getGlobalFeatureMap()
+    {
+        return global_features_;
+    }
 
-}  // namespace map_features
+} // namespace map_features

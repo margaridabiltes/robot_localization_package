@@ -24,10 +24,6 @@
 
 #define NUM_PARTICLES 1000.0
 
-#define ROOM_SIZE_X 4.0
-#define ROOM_SIZE_Y 4.0
-#define ROOM_SIZE_Z 0.0
-
 #define MOTION_DELTA_DISTANCE 0.1
 #define MOTION_DELTA_ANGLE 0.1
 #define MOTION_X_VARIANCE 0.05
@@ -101,7 +97,7 @@ private:
     // Decoded message structure
     struct DecodedMsg
     {
-        double x, y, z, theta;                                 // Position and orientation
+        double x, y, theta;                                    // Position and orientation
         std::string type;                                      // Feature type
         double confidence;                                     // Confidence level of classification
         std::array<std::array<double, 3>, 3> covariance_pos;   // Position covariance
@@ -201,9 +197,7 @@ private:
     // Particle management
     void normalizeWeights();
     double maxWeight();
-    void replaceWorstParticles(double percentage);
     void replaceWorstParticles_pgm(double percentage);
-    void injectRandomParticles(double percentage);
     void injectRandomParticles_pgm(double percentage);
 
     // Pose estimation
@@ -211,23 +205,16 @@ private:
     void publishEstimatedPose();
 
     // Particle handling
-    void createParticles(double num_particles);
     void publishParticles();
 
     // Feature handling
     void storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg);
-    std::vector<map_features::FeatureCorner> getExpectedFeaturesCorner(const Particle &p);
-    map_features::FeatureObject getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z);
+    std::vector<map_features::Feature> getExpectedFeatures(const Particle &p, const std::string &type);
     double transformAngleToParticleFrame(double feature_theta_map, double particle_theta);
     double computeAngleLikelihood(double measured_angle, double expected_angle, double sigma);
     DecodedMsg decodeMsg(const robot_msgs::msg::Feature &msg);
-    std::vector<geometry_msgs::msg::Point> getKeypointsInNewFrame(
-        std::vector<geometry_msgs::msg::Point> keypoints,
-        double x_base, double y_base, double z_base, double theta_base,
-        double x_new, double y_new, double z_new, double theta_new);
 
-    double computeLikelihoodCorner(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta);
-    double computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence);
+    double computeLikelihoodFeature(const Particle &p, double noisy_x, double noisy_y, double measured_theta, double sigma_pos, double sigma_theta, const std::string &type);
 
     // Color weight functions
     std::vector<double> colorFromWeight(double weight) const;

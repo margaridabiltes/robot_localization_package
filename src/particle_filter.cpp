@@ -126,7 +126,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
 
     while (rclcpp::ok() && !last_map_msg_)
     {
-        // RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
+        RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
         rclcpp::spin_some(this->get_node_base_interface());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -146,8 +146,6 @@ void ParticleFilter::loadParameters()
     bool success = true;
 
     this->declare_parameter("num_particles", NUM_PARTICLES);
-    this->declare_parameter("room_size_x", ROOM_SIZE_X);
-    this->declare_parameter("room_size_y", ROOM_SIZE_Y);
     this->declare_parameter("motion_delta_distance", MOTION_DELTA_DISTANCE);
     this->declare_parameter("motion_delta_angle", MOTION_DELTA_ANGLE);
     this->declare_parameter("motion_x_variance", MOTION_X_VARIANCE);
@@ -190,8 +188,6 @@ void ParticleFilter::loadParameters()
 
     // Log loaded parameters
     RCLCPP_INFO(this->get_logger(), "num_particles: %.1f", num_particles_);
-    RCLCPP_INFO(this->get_logger(), "room_size_x: %.2f", room_size_x_);
-    RCLCPP_INFO(this->get_logger(), "room_size_y: %.2f", room_size_y_);
     RCLCPP_INFO(this->get_logger(), "motion_delta_distance: %.2f", motion_delta_distance_);
     RCLCPP_INFO(this->get_logger(), "motion_delta_angle: %.2f", motion_delta_angle_);
     RCLCPP_INFO(this->get_logger(), "motion_x_variance: %.2f", motion_x_variance_);
@@ -337,30 +333,6 @@ void ParticleFilter::publishParticles()
     particles_pub_->publish(marker_array);
 }
 
-// replace the worst particles with random ones
-void ParticleFilter::replaceWorstParticles(double percentage)
-{
-    std::sort(particles_.begin(), particles_.end(),
-              [](const Particle &a, const Particle &b)
-              { return a.weight < b.weight; });
-
-    int num_replace = static_cast<int>(num_particles_ * percentage);
-
-    std::uniform_real_distribution<double> dist_x(-room_size_x_ / 2, room_size_x_ / 2);
-    std::uniform_real_distribution<double> dist_y(-room_size_y_ / 2, room_size_y_ / 2);
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
-
-    for (int i = 0; i < num_replace; i++)
-    {
-        particles_[i].x = dist_x(generator_);
-        particles_[i].y = dist_y(generator_);
-        particles_[i].theta = dist_theta(generator_);
-        particles_[i].weight = 1.0 / num_particles_;
-    }
-
-    normalizeWeights();
-}
-
 // replace the worst particles with random ones in white part of pgm (free space)
 void ParticleFilter::replaceWorstParticles_pgm(double percentage)
 {
@@ -391,31 +363,6 @@ void ParticleFilter::replaceWorstParticles_pgm(double percentage)
     }
 
     normalizeWeights();
-}
-
-// replace and inject random particles into the filter
-void ParticleFilter::injectRandomParticles(double percentage)
-{
-    // replace random particles
-    std::uniform_real_distribution<double> dist_x(-room_size_x_ / 2, room_size_x_ / 2);
-    std::uniform_real_distribution<double> dist_y(-room_size_y_ / 2, room_size_y_ / 2);
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
-
-    int num_replace = static_cast<int>(num_particles_ * percentage);
-
-    std::vector<int> random_indices(num_replace);
-    for (int &index : random_indices)
-    {
-        index = rand() % static_cast<int>(num_particles_);
-    }
-
-    for (int index : random_indices)
-    {
-        particles_[index].x = dist_x(generator_);
-        particles_[index].y = dist_y(generator_);
-        particles_[index].theta = dist_theta(generator_);
-        particles_[index].weight = 1.0 / num_particles_;
-    }
 }
 
 // replace and inject random particles into the filter in white part of pgm (free space)
@@ -466,106 +413,33 @@ void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::Shared
     new_map = true;
 }
 
-// get the expected corner features in the particle frame
-std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorner(const Particle &p)
+std::vector<map_features::Feature> ParticleFilter::getExpectedFeatures(const Particle &p, const std::string &type)
 {
-
-    std::vector<map_features::FeatureCorner> features_particle;
+    std::vector<map_features::Feature> features_particle;
 
     double cos_theta = std::cos(p.theta);
     double sin_theta = std::sin(p.theta);
 
     for (const auto &feature_ptr : global_features_)
     {
-        if (feature_ptr->type == "corner")
-        {
-
-            auto corner_ptr = std::dynamic_pointer_cast<map_features::FeatureCorner>(feature_ptr);
-            if (!corner_ptr)
-                continue;
-
-            double map_x = corner_ptr->x;
-            double map_y = corner_ptr->y;
-            double map_z = corner_ptr->z;
-            double corner_theta = corner_ptr->theta;
-
-            double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
-            double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
-            double particle_z = 0;
-
-            features_particle.emplace_back(particle_x, particle_y, particle_z, corner_theta);
-        }
-    }
-
-    return features_particle;
-}
-
-// get the expected closer object
-map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z)
-{
-    map_features::FeatureObject closest_object(0, 0, 0, 0, type, {});
-    double closest_distance = std::numeric_limits<double>::max();
-
-    for (const auto &feature_ptr : global_features_)
-    {
         if (feature_ptr->type == type)
         {
-
-            auto object_ptr = std::dynamic_pointer_cast<map_features::FeatureObject>(feature_ptr);
+            auto object_ptr = std::dynamic_pointer_cast<map_features::Feature>(feature_ptr);
             if (!object_ptr)
                 continue;
 
             double map_x = object_ptr->x;
             double map_y = object_ptr->y;
-            double map_z = object_ptr->z;
-            double object_theta = object_ptr->theta;
+            double feature_theta = object_ptr->theta;
 
-            double particle_x = std::cos(p.theta) * (map_x - p.x) + std::sin(p.theta) * (map_y - p.y);
-            double particle_y = -std::sin(p.theta) * (map_x - p.x) + std::cos(p.theta) * (map_y - p.y);
-            double particle_z = 0;
+            double particle_x = cos_theta * (map_x - p.x) + sin_theta * (map_y - p.y);
+            double particle_y = -sin_theta * (map_x - p.x) + cos_theta * (map_y - p.y);
 
-            double distance = std::hypot(particle_x - x, particle_y - y);
-
-            if (distance < closest_distance)
-            {
-                closest_distance = distance;
-                closest_object = *object_ptr;
-            }
+            features_particle.emplace_back(particle_x, particle_y, feature_theta, type);
         }
     }
 
-    return closest_object;
-}
-
-// transform the keypoints from the object local frame to new frame
-std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(std::vector<geometry_msgs::msg::Point> keypoints, double x_base, double y_base, double z_base, double theta_base, double x_new, double y_new, double z_new, double theta_new)
-{
-
-    std::vector<geometry_msgs::msg::Point> transformed_keypoints;
-
-    for (const auto &kp : keypoints)
-    {
-        geometry_msgs::msg::Point transformed_kp;
-
-        // Step 1: Rotate the keypoint by the object's orientation
-        double rotated_x = std::cos(theta_base) * kp.x - std::sin(theta_base) * kp.y;
-        double rotated_y = std::sin(theta_base) * kp.x + std::cos(theta_base) * kp.y;
-        double rotated_z = 0;
-
-        // Step 2: Translate the keypoint to the object's global position
-        double global_x = rotated_x + x_base;
-        double global_y = rotated_y + y_base;
-        double global_z = 0;
-
-        // Step 3: Transform the keypoint from the global frame to the new frame
-        transformed_kp.x = std::cos(theta_new) * (global_x - x_new) + std::sin(theta_new) * (global_y - y_new);
-        transformed_kp.y = -std::sin(theta_new) * (global_x - x_new) + std::cos(theta_new) * (global_y - y_new);
-        transformed_kp.z = 0; // Assuming 2D transformation
-
-        transformed_keypoints.push_back(transformed_kp);
-    }
-
-    return transformed_keypoints;
+    return features_particle;
 }
 
 // transform angle from the map frame to the particle frame
@@ -601,6 +475,14 @@ double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, d
 // compute the likelihood for the orientation of the corner feature
 double ParticleFilter::computeAngleLikelihood(double measured_angle, double expected_angle, double sigma)
 {
+    if (measured_angle > M_PI)
+        measured_angle -= 2 * M_PI;
+    if (measured_angle < -M_PI)
+        measured_angle += 2 * M_PI;
+    if (expected_angle > M_PI)
+        expected_angle -= 2 * M_PI;
+    if (expected_angle < -M_PI)
+        expected_angle += 2 * M_PI;
 
     double error = measured_angle - expected_angle;
 
@@ -616,14 +498,14 @@ double ParticleFilter::computeAngleLikelihood(double measured_angle, double expe
 }
 
 // compute the likelihood of a corner feature based on distance and angle
-double ParticleFilter::computeLikelihoodCorner(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta)
+double ParticleFilter::computeLikelihoodFeature(const Particle &p, double noisy_x, double noisy_y, double measured_theta, double sigma_pos, double sigma_theta, const std::string &type)
 {
-    std::vector<map_features::FeatureCorner> expected_features = getExpectedFeaturesCorner(p);
+    std::vector<map_features::Feature> expected_features = getExpectedFeatures(p, type);
 
     double min_dist = std::numeric_limits<double>::max();
-    map_features::FeatureCorner best_corner(0, 0, 0, 0);
+    map_features::Feature best_feature(0, 0, 0, type);
 
-    double likelihood = 1.0;
+    double likelihood = 0.0;
 
     for (const auto &exp : expected_features)
     {
@@ -631,18 +513,18 @@ double ParticleFilter::computeLikelihoodCorner(const Particle &p, double noisy_x
         if (dist < min_dist)
         {
             min_dist = dist;
-            best_corner = exp;
+            best_feature = exp;
         }
     }
 
     // Compute likelihood based on distance and angle
-    double expected_feature_angle = transformAngleToParticleFrame(best_corner.theta, p.theta);
+    double expected_feature_angle = transformAngleToParticleFrame(best_feature.theta, p.theta);
     double angle_likelihood = computeAngleLikelihood(measured_theta, expected_feature_angle, sigma_theta);
     double distance_likelihood = (std::exp(-(min_dist * min_dist) / (2 * sigma_pos * sigma_pos))) / std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
 
     if (with_angle_)
     {
-        likelihood = (angle_likelihood * distance_likelihood);
+        likelihood = (angle_likelihood + distance_likelihood);
     }
     else
     {
@@ -652,61 +534,16 @@ double ParticleFilter::computeLikelihoodCorner(const Particle &p, double noisy_x
     return likelihood;
 }
 
-// compute the likelihood of an object feature based on distance to keypoints of object
-double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence)
-{
-    map_features::FeatureObject expected_Object = getExpectedFeaturesCloserObject(p, type, noisy_x, noisy_y, noisy_z);
-
-    // cumpute the keypoints from the closest object in the particles frame
-    std::vector<geometry_msgs::msg::Point> expected_keypoints = getKeypointsInNewFrame(expected_Object.keypoints,
-                                                                                       expected_Object.x, expected_Object.y, 0, expected_Object.theta,
-                                                                                       p.x, p.y, 0, p.theta);
-
-    // compute the keypoints that the robot sees based on the center that the robot sees and object
-    std::vector<geometry_msgs::msg::Point> observed_keypoints = getKeypointsInNewFrame(expected_Object.keypoints,
-                                                                                       noisy_x, noisy_y, 0, measured_theta,
-                                                                                       0, 0, 0, 0);
-
-    double likelihood = 0.0;
-
-    // compute the distance between the keypoints that the robot sees and the expected keypoints
-    for (const auto &observed_kp : observed_keypoints)
-    {
-        double min_dist = std::numeric_limits<double>::max();
-        for (const auto &expected_kp : expected_keypoints)
-        {
-            double dist = std::hypot(observed_kp.x - expected_kp.x, observed_kp.y - expected_kp.y);
-            min_dist = std::min(min_dist, dist);
-        }
-        double distance_likelihood = (std::exp(-(min_dist * min_dist) / (2 * sigma_pos * sigma_pos))) /
-                                     std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
-        likelihood += distance_likelihood;
-    }
-
-    likelihood *= confidence;
-
-    return likelihood;
-}
-
 // decode a feature message received from the topic features into a DecodedMsg structure
 ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feature &msg)
 {
     DecodedMsg feature;
 
-    feature.x = msg.position.x;
-    feature.y = msg.position.y;
-    feature.z = msg.position.z;
+    feature.x = msg.x;
+    feature.y = msg.y;
+    feature.theta = msg.theta;
     feature.type = msg.type;
     feature.confidence = msg.confidence;
-
-    tf2::Quaternion q(
-        msg.orientation.x,
-        msg.orientation.y,
-        msg.orientation.z,
-        msg.orientation.w);
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-    feature.theta = yaw;
 
     for (size_t i = 0; i < 3; ++i)
     {
@@ -912,34 +749,6 @@ void ParticleFilter::initializeParticles_pgm()
      }  */
 }
 
-void ParticleFilter::initializeParticles()
-{
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    generator_.seed(seed);
-
-    std::uniform_real_distribution<double> dist_x(-room_size_x_ / 2, room_size_x_ / 2);
-    std::uniform_real_distribution<double> dist_y(-room_size_y_ / 2, room_size_y_ / 2);
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
-
-    log_file_.open("log_pf.txt", std::ios::app);
-    if (!log_file_.is_open())
-    {
-        RCLCPP_ERROR(this->get_logger(), "Failed to open log file for writing.");
-        return;
-    }
-
-    particles_.resize(num_particles_);
-    for (auto &p : particles_)
-    {
-        p.x = dist_x(generator_);
-        p.y = dist_y(generator_);
-        p.theta = dist_theta(generator_);
-        p.weight = 1.0 / num_particles_;
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Initialized %f particles", num_particles_);
-}
-
 void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
     if (particles_.empty())
@@ -987,7 +796,6 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg)
 
         for (auto &p : particles_)
         {
-
             p.x += delta_x_robot * std::cos(p.theta) - delta_y_robot * std::sin(p.theta) + noise_x(generator_);
             p.y += delta_x_robot * std::sin(p.theta) + delta_y_robot * std::cos(p.theta) + noise_y(generator_);
             p.theta += delta_theta_odom + noise_theta(generator_);
@@ -1023,8 +831,6 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
     new_map = false;
 
-    bool all_outside = true;
-
     for (auto &p : particles_)
     {
         double likelihood = 0;
@@ -1035,7 +841,6 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
 
             double sigma_x = std::sqrt(obs.covariance_pos[0][0]);
             double sigma_y = std::sqrt(obs.covariance_pos[1][1]);
-            double sigma_z = std::sqrt(obs.covariance_pos[2][2]);
             double sigma_theta = std::sqrt(obs.covariance_angle[2][2]);
             double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y) / 2.0);
 
@@ -1052,14 +857,8 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             // ! ########
 
             // Compute likelihood based on feature type
-            if (obs.type == "corner")
-            {
-                likelihood += computeLikelihoodCorner(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta);
-            }
-            else
-            {
-                likelihood += computeLikelihoodObject(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta, obs.type, obs.confidence);
-            }
+
+            likelihood += computeLikelihoodFeature(p, obs.x, obs.y, obs.theta, sigma_pos, sigma_theta, obs.type);
         }
 
         p.weight *= likelihood;
@@ -1267,7 +1066,7 @@ void ParticleFilter::publishEstimatedPose()
 
     tf_broadcaster_->sendTransform(map_to_pose_tf);
 
-    RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
+    // RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
 
 int main(int argc, char **argv)
