@@ -831,6 +831,8 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
     new_map = false;
 
+    bool all_outside = true;
+
     for (auto &p : particles_)
     {
         double likelihood = 0;

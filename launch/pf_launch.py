@@ -155,29 +155,29 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        # rviz,
-        # webots,
-        # robot_controller,
-        # fake_detector,
+        rviz,
+        webots,
+        robot_controller,
+        fake_detector,
         # path_tracker,
         # corner_detector,
         particle_filter,
         # send_scan,
         # recv_results,
         # perception,
-        # tf_map_to_odom,
-        # tf_base_to_lidar,
-        # map_server,
-        # lifecycle_manager,
-        # teleop,
-        # RegisterEventHandler(
-        #    OnProcessExit(
-        #        target_action=webots,
-        #        on_exit=[
-        #            launch.actions.EmitEvent(
-        #                event=Shutdown()
-        #            )
-        #        ]
-        #    )
-        # )
+        tf_map_to_odom,
+        tf_base_to_lidar,
+        map_server,
+        lifecycle_manager,
+        teleop,
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=webots,
+                on_exit=[
+                    launch.actions.EmitEvent(
+                        event=Shutdown()
+                    )
+                ]
+            )
+        )
     ])
