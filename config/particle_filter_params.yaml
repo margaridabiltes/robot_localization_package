@@ -1,9 +1,6 @@
 particle_filter:
   ros__parameters:
-    num_particles: 10000.0
-    room_size_x: 1.5
-    room_size_y: 1.5
-    room_size_z: 0.0
+    num_particles: 1000.0
     motion_delta_distance: 0.1
     motion_delta_angle: 0.1
     motion_x_variance: 0.05

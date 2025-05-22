@@ -22,7 +22,7 @@
 #include <array>
 #include <string>
 
-#define NUM_PARTICLES 1000.0
+#define NUM_PARTICLES 100.0
 
 #define MOTION_DELTA_DISTANCE 0.1
 #define MOTION_DELTA_ANGLE 0.1

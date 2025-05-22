@@ -162,8 +162,6 @@ void ParticleFilter::loadParameters()
     this->declare_parameter("map_pgm", std::string(""));
 
     success &= this->get_parameter("num_particles", num_particles_);
-    success &= this->get_parameter("room_size_x", room_size_x_);
-    success &= this->get_parameter("room_size_y", room_size_y_);
     success &= this->get_parameter("motion_delta_distance", motion_delta_distance_);
     success &= this->get_parameter("motion_delta_angle", motion_delta_angle_);
     success &= this->get_parameter("motion_x_variance", motion_x_variance_);
