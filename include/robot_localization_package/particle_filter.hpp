@@ -100,8 +100,8 @@ private:
         double x, y, theta;                                    // Position and orientation
         std::string type;                                      // Feature type
         double confidence;                                     // Confidence level of classification
-        std::array<std::array<double, 3>, 3> covariance_pos;   // Position covariance
-        std::array<std::array<double, 3>, 3> covariance_angle; // Orientation covariance
+        std::array<std::array<double, 2>, 2> covariance_pos;   // Position covariance
+        double angle_variance;                                 // Orientation covariance
     };
 
     // Resampling methods

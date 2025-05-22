@@ -542,15 +542,16 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
     feature.theta = msg.theta;
     feature.type = msg.type;
     feature.confidence = msg.confidence;
+    feature.angle_variance = msg.orientation_variance;
 
-    for (size_t i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 2; ++i)
     {
-        for (size_t j = 0; j < 3; ++j)
+        for (size_t j = 0; j < 2; ++j)
         {
             feature.covariance_pos[i][j] = msg.position_covariance[i * 3 + j];
-            feature.covariance_angle[i][j] = msg.orientation_covariance[i * 3 + j];
         }
     }
+
 
     return feature;
 }
@@ -841,7 +842,7 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
 
             double sigma_x = std::sqrt(obs.covariance_pos[0][0]);
             double sigma_y = std::sqrt(obs.covariance_pos[1][1]);
-            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]);
+            double sigma_theta = std::sqrt(obs.angle_variance);
             double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y) / 2.0);
 
             //! VER ISTO (os noises não são só para o calculo da likelihood?)
