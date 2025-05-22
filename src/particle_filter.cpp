@@ -574,13 +574,12 @@ double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, d
 
     // print the theta of the feature and the particle
     RCLCPP_INFO(this->get_logger(), "Feature theta: %.2f, Particle theta: %.2f", feature_theta_map, particle_theta);
-    // Transform the angle from the map frame to the particle frame
+
     if (particle_theta < -M_PI)
         particle_theta += 2 * M_PI;
     else if (particle_theta > M_PI)
         particle_theta -= 2 * M_PI;
 
-    // get feature_theta_map from degrees to radians
     feature_theta_map = feature_theta_map * (M_PI / 180.0);
     if (feature_theta_map < -M_PI)
         feature_theta_map += 2 * M_PI;
@@ -643,11 +642,11 @@ double ParticleFilter::computeLikelihoodCorner(const Particle &p, double noisy_x
 
     if (with_angle_)
     {
-        likelihood *= (angle_likelihood * distance_likelihood);
+        likelihood = (angle_likelihood * distance_likelihood);
     }
     else
     {
-        likelihood *= distance_likelihood;
+        likelihood = distance_likelihood;
     }
 
     return likelihood;
@@ -1024,6 +1023,8 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
     }
     new_map = false;
 
+    bool all_outside = true;
+
     for (auto &p : particles_)
     {
         double likelihood = 0;
@@ -1062,23 +1063,29 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
         }
 
         p.weight *= likelihood;
-    }
 
-    // Penalize particles outside the room limits
-    for (auto &p : particles_)
-    {
-        /* if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
-            p.weight = p.weight/ 2;
-        } */
         bool penalize = !isParticleInFreeSpace(p.x, p.y, pgm, resolution, origin);
-
         if (penalize)
         {
             p.weight = p.weight / 2;
         }
+        else
+        {
+            all_outside = false;
+        }
     }
 
-    normalizeWeights();
+    if (all_outside == true)
+    {
+        RCLCPP_WARN(this->get_logger(), "All particles are outside the free space.");
+        injectRandomParticles_pgm(1);
+        return;
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "Not all particles are outside the free space.");
+        normalizeWeights();
+    }
 
     // perform resampling
     resampleParticles(ResamplingAmount::ESS, ResamplingMethod::RESIDUAL);
