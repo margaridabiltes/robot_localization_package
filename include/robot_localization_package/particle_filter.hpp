@@ -38,28 +38,33 @@
 #define RESAMPLE_MAX_WEIGHT_THRESHOLD 4.0
 
 #define INJECT_NUM_ITERATIONS 10
-#define INJECT_PERCENTAGE 0.3
+#define INJECT_PERCENTAGE 0.4
 
-#define REPLACE_WORST_PERCENTAGE 0.15
+#define REPLACE_WORST_PERCENTAGE 0.3
 
 #define ESTIMATE_NUM_PARTICLES 10
 
-struct PGMImage {
+struct PGMImage
+{
     int width;
     int height;
     int max_val;
     std::vector<uint8_t> data;
 
-    void load(const std::string& path) {
+    void load(const std::string &path)
+    {
         std::ifstream file(path, std::ios::binary);
-        if (!file.is_open()) throw std::runtime_error("Could not open PGM file");
+        if (!file.is_open())
+            throw std::runtime_error("Could not open PGM file");
 
         std::string line;
         std::getline(file, line);
-        if (line != "P5") throw std::runtime_error("Only binary PGM (P5) supported");
+        if (line != "P5")
+            throw std::runtime_error("Only binary PGM (P5) supported");
 
         // Skip comments
-        do {
+        do
+        {
             std::getline(file, line);
         } while (line[0] == '#');
 
@@ -67,41 +72,45 @@ struct PGMImage {
         ss >> width >> height;
 
         file >> max_val;
-        file.get();  // consume the newline
+        file.get(); // consume the newline
 
         data.resize(width * height);
-        file.read(reinterpret_cast<char*>(data.data()), data.size());
+        file.read(reinterpret_cast<char *>(data.data()), data.size());
     }
 
-    uint8_t pixel(int x, int y) const {
+    uint8_t pixel(int x, int y) const
+    {
         return data[y * width + x];
     }
 };
 
-
-class ParticleFilter : public rclcpp::Node {
+class ParticleFilter : public rclcpp::Node
+{
 public:
     // Constructor
     ParticleFilter();
 
 private:
     // Particle structure
-    struct Particle {
-        double x, y, theta;  // Position and orientation
-        double weight;       // Weight of the particle
+    struct Particle
+    {
+        double x, y, theta; // Position and orientation
+        double weight;      // Weight of the particle
     };
 
     // Decoded message structure
-    struct DecodedMsg {
-        double x, y, z, theta;  // Position and orientation
-        std::string type;       // Feature type
-        double confidence;      // Confidence level of classification
+    struct DecodedMsg
+    {
+        double x, y, z, theta;                                 // Position and orientation
+        std::string type;                                      // Feature type
+        double confidence;                                     // Confidence level of classification
         std::array<std::array<double, 3>, 3> covariance_pos;   // Position covariance
         std::array<std::array<double, 3>, 3> covariance_angle; // Orientation covariance
     };
 
     // Resampling methods
-    enum class ResamplingMethod {
+    enum class ResamplingMethod
+    {
         MULTINOMIAL,
         STRATIFIED,
         SYSTEMATIC,
@@ -109,7 +118,8 @@ private:
     };
 
     // Resampling triggers
-    enum class ResamplingAmount {
+    enum class ResamplingAmount
+    {
         ESS,
         MAX_WEIGHT
     };
@@ -122,7 +132,7 @@ private:
     std::vector<map_features::FeaturePtr> global_features_;
     std::string map_features_, map_yaml_, map_pgm_;
     double room_size_x_, room_size_y_;
-    
+
     // Particle filter variables
     double num_particles_;
     std::vector<Particle> particles_;
@@ -169,10 +179,9 @@ private:
     std::vector<std::pair<int, int>> free_pixels;
     double resolution;
     std::vector<double> origin;
-    
+
     // PGM loader
     void calculateFreeSpaceFromPGM();
-
 
     // Initialization
     void initializeParticles_pgm();
@@ -211,12 +220,12 @@ private:
     map_features::FeatureObject getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z);
     double transformAngleToParticleFrame(double feature_theta_map, double particle_theta);
     double computeAngleLikelihood(double measured_angle, double expected_angle, double sigma);
-    DecodedMsg decodeMsg(const robot_msgs::msg::Feature& msg);
+    DecodedMsg decodeMsg(const robot_msgs::msg::Feature &msg);
     std::vector<geometry_msgs::msg::Point> getKeypointsInNewFrame(
-        std::vector<geometry_msgs::msg::Point> keypoints, 
-        double  x_base, double y_base, double z_base, double theta_base, 
+        std::vector<geometry_msgs::msg::Point> keypoints,
+        double x_base, double y_base, double z_base, double theta_base,
         double x_new, double y_new, double z_new, double theta_new);
-        
+
     double computeLikelihoodCorner(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta);
     double computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence);
 
@@ -228,4 +237,4 @@ private:
     void loadParameters();
 };
 
-#endif  // PARTICLE_FILTER_HPP
+#endif // PARTICLE_FILTER_HPP

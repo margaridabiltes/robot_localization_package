@@ -1,20 +1,25 @@
 #include "robot_localization_package/particle_filter.hpp"
 
-struct PGMImage2 {
+struct PGMImage2
+{
     int width;
     int height;
     int max_val;
     std::vector<uint8_t> data;
 
-    void load(const std::string& path) {
+    void load(const std::string &path)
+    {
         std::ifstream file(path, std::ios::binary);
-        if (!file.is_open()) throw std::runtime_error("Could not open PGM file");
+        if (!file.is_open())
+            throw std::runtime_error("Could not open PGM file");
 
         std::string line;
         std::getline(file, line);
-        if (line != "P5") throw std::runtime_error("Only binary PGM (P5) supported");
+        if (line != "P5")
+            throw std::runtime_error("Only binary PGM (P5) supported");
 
-        do {
+        do
+        {
             std::getline(file, line);
         } while (line[0] == '#');
 
@@ -22,37 +27,42 @@ struct PGMImage2 {
         ss >> width >> height;
 
         file >> max_val;
-        file.get();  // consume the newline
+        file.get(); // consume the newline
 
         data.resize(width * height);
-        file.read(reinterpret_cast<char*>(data.data()), data.size());
+        file.read(reinterpret_cast<char *>(data.data()), data.size());
     }
 
-    uint8_t pixel(int x, int y) const {
+    uint8_t pixel(int x, int y) const
+    {
         return data[y * width + x];
     }
 };
 
-std::tuple<double, double> pixelToWorld(int x_pix, int y_pix, double resolution, const std::vector<double>& origin, int image_height) {
+std::tuple<double, double> pixelToWorld(int x_pix, int y_pix, double resolution, const std::vector<double> &origin, int image_height)
+{
     double x = origin[0] + (x_pix + 0.5) * resolution;
-    double y = origin[1] + (image_height - y_pix - 0.5) * resolution; 
+    double y = origin[1] + (image_height - y_pix - 0.5) * resolution;
     return {x, y};
 }
 
-std::tuple<int, int> worldToPixel(double x_world, double y_world, double resolution, const std::vector<double>& origin, int image_height) {
+std::tuple<int, int> worldToPixel(double x_world, double y_world, double resolution, const std::vector<double> &origin, int image_height)
+{
     int x_pix = static_cast<int>((x_world - origin[0]) / resolution - 0.5);
     int y_pix = image_height - 1 - static_cast<int>((y_world - origin[1]) / resolution - 0.5);
     return {x_pix, y_pix};
 }
 
 // Check if particle is in white part of pgm
-bool isParticleInFreeSpace(double x_world, double y_world, const PGMImage& pgm, double resolution, const std::vector<double>& origin) {
+bool isParticleInFreeSpace(double x_world, double y_world, const PGMImage &pgm, double resolution, const std::vector<double> &origin)
+{
     // Convert world to pixel coordinates
     int x_pix = static_cast<int>((x_world - origin[0]) / resolution);
     int y_pix = pgm.height - 1 - static_cast<int>((y_world - origin[1]) / resolution); // y inverted
 
     // Check bounds
-    if (x_pix < 0 || x_pix >= pgm.width || y_pix < 0 || y_pix >= pgm.height) {
+    if (x_pix < 0 || x_pix >= pgm.width || y_pix < 0 || y_pix >= pgm.height)
+    {
         return false; // out of bounds = not free
     }
 
@@ -63,20 +73,21 @@ bool isParticleInFreeSpace(double x_world, double y_world, const PGMImage& pgm, 
 }
 
 ParticleFilter::ParticleFilter() : Node("particle_filter"),
-    last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
-    msg_odom_base_link_(nullptr), last_map_msg_(nullptr)
+                                   last_x_(0.0), last_y_(0.0), last_theta_(0.0), iterationCounter(0.0), first_update_(true),
+                                   msg_odom_base_link_(nullptr), last_map_msg_(nullptr)
 {
-    std::cout << "ParticleFilter Constructor START" << std::endl;  
+    std::cout << "ParticleFilter Constructor START" << std::endl;
     RCLCPP_INFO(this->get_logger(), "Initializing particle filter node.");
 
     // Load parameters from the parameter file
     loadParameters();
-    
+
     // Retrieve the map_features parameter passed from the launch file
 
     this->get_parameter("map_features", map_features_);
 
-    if (map_features_.empty()) {
+    if (map_features_.empty())
+    {
         RCLCPP_ERROR(this->get_logger(), "No map features provided. Please set the 'map_features' parameter.");
         return;
     }
@@ -88,13 +99,11 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
     // Subscribe to the features observed by the robot and odometry topics
     feature_sub_ = this->create_subscription<robot_msgs::msg::FeatureArray>(
         "/features", 10,
-        std::bind(&ParticleFilter::storeMapMessage, this, std::placeholders::_1)
-    );    
+        std::bind(&ParticleFilter::storeMapMessage, this, std::placeholders::_1));
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
-        std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1) 
-    );
+        std::bind(&ParticleFilter::motionUpdate, this, std::placeholders::_1));
 
     // Create publishers for the estimated pose and particles
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/estimated_pose", 10);
@@ -105,7 +114,7 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
 
     // Create a timer to publish the estimated pose and particles
     timer_pose_ = create_wall_timer(std::chrono::milliseconds(500), std::bind(&ParticleFilter::publishEstimatedPose, this));
-    
+
     // Initialize the color pallete for the particles weights
     computeColorWeightLookup();
 
@@ -115,15 +124,14 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
     // Initialize the particles
     initializeParticles_pgm();
 
-    while (rclcpp::ok() && !last_map_msg_) {
-        //RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
+    while (rclcpp::ok() && !last_map_msg_)
+    {
+        // RCLCPP_INFO(this->get_logger(), "Waiting for the first keypoint message...");
         rclcpp::spin_some(this->get_node_base_interface());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-
     RCLCPP_INFO(this->get_logger(), "Particle filter node initialized successfully.");
-
 }
 
 //! auxiliar functions start!//
@@ -131,7 +139,8 @@ ParticleFilter::ParticleFilter() : Node("particle_filter"),
 #pragma region auxiliar functions
 
 // load the paramaters for the node
-void ParticleFilter::loadParameters() {
+void ParticleFilter::loadParameters()
+{
     RCLCPP_INFO(this->get_logger(), "Loading particle filter parameters...");
 
     bool success = true;
@@ -172,7 +181,8 @@ void ParticleFilter::loadParameters() {
     success &= this->get_parameter("map_yaml", map_yaml_);
     success &= this->get_parameter("map_pgm", map_pgm_);
 
-    if (!success) {
+    if (!success)
+    {
         RCLCPP_ERROR(this->get_logger(), "One or more parameters failed to load. Check your YAML or launch file.");
         // Optionally shutdown or throw an exception here
         return;
@@ -193,14 +203,13 @@ void ParticleFilter::loadParameters() {
     RCLCPP_INFO(this->get_logger(), "inject_percentage: %.2f", inject_percentage_);
     RCLCPP_INFO(this->get_logger(), "replace_worst_percentage: %.2f", replace_worst_percentage_);
     RCLCPP_INFO(this->get_logger(), "estimate_num_particles: %d", estimate_num_particles_);
-    RCLCPP_INFO(this->get_logger(), "map_features: %s", map_features_.c_str()); 
-    RCLCPP_INFO(this->get_logger(), "map_yaml: %s", map_yaml_.c_str()); 
-    RCLCPP_INFO(this->get_logger(), "map_pgm: %s", map_pgm_.c_str()); 
-
-
+    RCLCPP_INFO(this->get_logger(), "map_features: %s", map_features_.c_str());
+    RCLCPP_INFO(this->get_logger(), "map_yaml: %s", map_yaml_.c_str());
+    RCLCPP_INFO(this->get_logger(), "map_pgm: %s", map_pgm_.c_str());
 }
 
-void ParticleFilter::calculateFreeSpaceFromPGM() {
+void ParticleFilter::calculateFreeSpaceFromPGM()
+{
     // Load map.yaml
     YAML::Node config = YAML::LoadFile(map_yaml_);
     resolution = config["resolution"].as<double>();
@@ -208,16 +217,19 @@ void ParticleFilter::calculateFreeSpaceFromPGM() {
     int negate = config["negate"] ? config["negate"].as<int>() : 0;
 
     // Load PGM
-    //PGMImage pgm;
+    // PGMImage pgm;
     pgm.load(map_pgm_);
 
     // Collect free pixels
-    //std::vector<std::pair<int, int>> free_pixels;
-    for (int y = 0; y < pgm.height; ++y) {
-        for (int x = 0; x < pgm.width; ++x) {
+    // std::vector<std::pair<int, int>> free_pixels;
+    for (int y = 0; y < pgm.height; ++y)
+    {
+        for (int x = 0; x < pgm.width; ++x)
+        {
             uint8_t val = pgm.pixel(x, y);
             bool is_free = (negate == 0) ? (val >= 254) : (val <= 1);
-            if (is_free) {
+            if (is_free)
+            {
                 free_pixels.emplace_back(x, y);
             }
         }
@@ -225,44 +237,53 @@ void ParticleFilter::calculateFreeSpaceFromPGM() {
 }
 
 // normalize the weights of the particles
-void ParticleFilter::normalizeWeights() {
+void ParticleFilter::normalizeWeights()
+{
     double sum_weights = std::accumulate(particles_.begin(), particles_.end(), 0.0,
-        [](double sum, const Particle &p) { return sum + p.weight; });
+                                         [](double sum, const Particle &p)
+                                         { return sum + p.weight; });
 
-    for (auto &p : particles_) {
+    for (auto &p : particles_)
+    {
         p.weight /= sum_weights;
     }
 }
 
 // get the maximum weight of the particles
-double ParticleFilter::maxWeight(){
+double ParticleFilter::maxWeight()
+{
     double max_weight = 0.0;
-    for (const auto &p : particles_) {
+    for (const auto &p : particles_)
+    {
         max_weight = std::max(max_weight, p.weight);
     }
     return max_weight;
 }
 
 // compute the color weight lookup table for visualization
-void ParticleFilter::computeColorWeightLookup() {
+void ParticleFilter::computeColorWeightLookup()
+{
     double average_weight = 1.0 / num_particles_;
 
     ColorWeightLookup = {
-        {0.9 * average_weight, {1.0, 1.0, 1.0}}, // White
-        {average_weight, {0.56, 0.0, 1.0}}, // Violet
-        {1.05 * average_weight, {0.0, 0.0, 1.0}}, // Blue
-        {1.1 * average_weight, {0.0, 1.0, 0.5}}, // Cyan
-        {1.15 * average_weight, {0.0, 1.0, 0.0}}, // Green
-        {1.2 * average_weight, {1.0, 1.0, 0.0}}, // Yellow
-        {1.5 * average_weight, {1.0, 0.5, 0.0}}, // Orange
-        {std::numeric_limits<double>::max(), {1.0, 0.0, 0.0}}  // Red
+        {0.9 * average_weight, {1.0, 1.0, 1.0}},              // White
+        {average_weight, {0.56, 0.0, 1.0}},                   // Violet
+        {1.05 * average_weight, {0.0, 0.0, 1.0}},             // Blue
+        {1.1 * average_weight, {0.0, 1.0, 0.5}},              // Cyan
+        {1.15 * average_weight, {0.0, 1.0, 0.0}},             // Green
+        {1.2 * average_weight, {1.0, 1.0, 0.0}},              // Yellow
+        {1.5 * average_weight, {1.0, 0.5, 0.0}},              // Orange
+        {std::numeric_limits<double>::max(), {1.0, 0.0, 0.0}} // Red
     };
 }
 
 // get color based on the weight of the particle
-std::vector<double> ParticleFilter::colorFromWeight(double weight) const {
-    for (const auto &entry : ColorWeightLookup) {
-        if (weight < entry.first) {
+std::vector<double> ParticleFilter::colorFromWeight(double weight) const
+{
+    for (const auto &entry : ColorWeightLookup)
+    {
+        if (weight < entry.first)
+        {
             return entry.second;
         }
     }
@@ -271,15 +292,16 @@ std::vector<double> ParticleFilter::colorFromWeight(double weight) const {
 }
 
 // publish the particles for visualization as markers
-void ParticleFilter::publishParticles() {
-    if (particles_.empty()) return;
+void ParticleFilter::publishParticles()
+{
+    if (particles_.empty())
+        return;
 
     visualization_msgs::msg::MarkerArray marker_array;
     int i = 0;
 
-
-
-    for (const auto &p : particles_) {
+    for (const auto &p : particles_)
+    {
         visualization_msgs::msg::Marker marker;
         marker.header.frame_id = "map";
         marker.header.stamp = this->get_clock()->now();
@@ -316,30 +338,35 @@ void ParticleFilter::publishParticles() {
 }
 
 // replace the worst particles with random ones
-void ParticleFilter::replaceWorstParticles(double percentage ) {
-    std::sort(particles_.begin(), particles_.end(), 
-              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
+void ParticleFilter::replaceWorstParticles(double percentage)
+{
+    std::sort(particles_.begin(), particles_.end(),
+              [](const Particle &a, const Particle &b)
+              { return a.weight < b.weight; });
 
     int num_replace = static_cast<int>(num_particles_ * percentage);
 
-    std::uniform_real_distribution<double> dist_x(-room_size_x_/2, room_size_x_/2);
-    std::uniform_real_distribution<double> dist_y(-room_size_y_/2, room_size_y_/2);
+    std::uniform_real_distribution<double> dist_x(-room_size_x_ / 2, room_size_x_ / 2);
+    std::uniform_real_distribution<double> dist_y(-room_size_y_ / 2, room_size_y_ / 2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
-    for (int i = 0; i < num_replace; i++) {
+    for (int i = 0; i < num_replace; i++)
+    {
         particles_[i].x = dist_x(generator_);
         particles_[i].y = dist_y(generator_);
         particles_[i].theta = dist_theta(generator_);
-        particles_[i].weight = 1.0 / num_particles_; 
+        particles_[i].weight = 1.0 / num_particles_;
     }
 
     normalizeWeights();
 }
 
 // replace the worst particles with random ones in white part of pgm (free space)
-void ParticleFilter::replaceWorstParticles_pgm(double percentage) {
-    std::sort(particles_.begin(), particles_.end(), 
-              [](const Particle &a, const Particle &b) { return a.weight < b.weight; });
+void ParticleFilter::replaceWorstParticles_pgm(double percentage)
+{
+    std::sort(particles_.begin(), particles_.end(),
+              [](const Particle &a, const Particle &b)
+              { return a.weight < b.weight; });
 
     int num_replace = static_cast<int>(num_particles_ * percentage);
 
@@ -348,38 +375,42 @@ void ParticleFilter::replaceWorstParticles_pgm(double percentage) {
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> index_dist(0, free_pixels.size() - 1);
 
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     double init_weight = 1.0 / num_particles_;
 
-    for (int i = 0; i < num_replace; i++) {
+    for (int i = 0; i < num_replace; i++)
+    {
         auto [x_pix, y_pix] = free_pixels[index_dist(gen)];
         auto [x, y] = pixelToWorld(x_pix, y_pix, resolution, origin, pgm.height);
 
         particles_[i].x = x;
         particles_[i].y = y;
         particles_[i].theta = dist_theta(generator_);
-        particles_[i].weight = init_weight; 
+        particles_[i].weight = init_weight;
     }
 
     normalizeWeights();
 }
 
 // replace and inject random particles into the filter
-void ParticleFilter::injectRandomParticles(double percentage){
-    //replace random particles
-    std::uniform_real_distribution<double> dist_x(-room_size_x_/2, room_size_x_/2);
-    std::uniform_real_distribution<double> dist_y(-room_size_y_/2, room_size_y_/2);
+void ParticleFilter::injectRandomParticles(double percentage)
+{
+    // replace random particles
+    std::uniform_real_distribution<double> dist_x(-room_size_x_ / 2, room_size_x_ / 2);
+    std::uniform_real_distribution<double> dist_y(-room_size_y_ / 2, room_size_y_ / 2);
     std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     int num_replace = static_cast<int>(num_particles_ * percentage);
 
     std::vector<int> random_indices(num_replace);
-    for (int &index : random_indices) {
+    for (int &index : random_indices)
+    {
         index = rand() % static_cast<int>(num_particles_);
     }
 
-    for (int index : random_indices) {
+    for (int index : random_indices)
+    {
         particles_[index].x = dist_x(generator_);
         particles_[index].y = dist_y(generator_);
         particles_[index].theta = dist_theta(generator_);
@@ -388,31 +419,34 @@ void ParticleFilter::injectRandomParticles(double percentage){
 }
 
 // replace and inject random particles into the filter in white part of pgm (free space)
-void ParticleFilter::injectRandomParticles_pgm(double percentage){
-    //replace random particles
+void ParticleFilter::injectRandomParticles_pgm(double percentage)
+{
+    // replace random particles
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> index_dist(0, free_pixels.size() - 1);
 
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     int num_replace = static_cast<int>(num_particles_ * percentage);
 
     std::vector<int> random_indices(num_replace);
-    for (int &index : random_indices) {
+    for (int &index : random_indices)
+    {
         index = rand() % static_cast<int>(num_particles_);
     }
 
     double init_weight = 1.0 / num_particles_;
 
-    for (int i : random_indices) {
+    for (int i : random_indices)
+    {
         auto [x_pix, y_pix] = free_pixels[index_dist(gen)];
         auto [x, y] = pixelToWorld(x_pix, y_pix, resolution, origin, pgm.height);
 
         particles_[i].x = x;
         particles_[i].y = y;
         particles_[i].theta = dist_theta(generator_);
-        particles_[i].weight = init_weight; 
+        particles_[i].weight = init_weight;
     }
 }
 
@@ -424,27 +458,31 @@ void ParticleFilter::injectRandomParticles_pgm(double percentage){
 
 #pragma region feature handling
 
-
 // store the map message received from the topic
-void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg) {
-    last_map_msg_ = msg; 
+void ParticleFilter::storeMapMessage(const robot_msgs::msg::FeatureArray::SharedPtr msg)
+{
+    last_map_msg_ = msg;
     RCLCPP_INFO(this->get_logger(), "Received features");
-    new_map = true; 
+    new_map = true;
 }
 
 // get the expected corner features in the particle frame
-std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorner(const Particle &p) {
+std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorner(const Particle &p)
+{
 
     std::vector<map_features::FeatureCorner> features_particle;
 
     double cos_theta = std::cos(p.theta);
     double sin_theta = std::sin(p.theta);
 
-    for (const auto& feature_ptr : global_features_) {
-        if (feature_ptr->type == "corner") {
+    for (const auto &feature_ptr : global_features_)
+    {
+        if (feature_ptr->type == "corner")
+        {
 
             auto corner_ptr = std::dynamic_pointer_cast<map_features::FeatureCorner>(feature_ptr);
-            if (!corner_ptr) continue;
+            if (!corner_ptr)
+                continue;
 
             double map_x = corner_ptr->x;
             double map_y = corner_ptr->y;
@@ -458,20 +496,24 @@ std::vector<map_features::FeatureCorner> ParticleFilter::getExpectedFeaturesCorn
             features_particle.emplace_back(particle_x, particle_y, particle_z, corner_theta);
         }
     }
-    
+
     return features_particle;
 }
 
-// get the expected closer object 
-map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z){
+// get the expected closer object
+map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(const Particle &p, const std::string type, double x, double y, double z)
+{
     map_features::FeatureObject closest_object(0, 0, 0, 0, type, {});
     double closest_distance = std::numeric_limits<double>::max();
 
-    for(const auto& feature_ptr : global_features_) {
-        if (feature_ptr->type == type) {
+    for (const auto &feature_ptr : global_features_)
+    {
+        if (feature_ptr->type == type)
+        {
 
             auto object_ptr = std::dynamic_pointer_cast<map_features::FeatureObject>(feature_ptr);
-            if (!object_ptr) continue;
+            if (!object_ptr)
+                continue;
 
             double map_x = object_ptr->x;
             double map_y = object_ptr->y;
@@ -484,7 +526,8 @@ map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(cons
 
             double distance = std::hypot(particle_x - x, particle_y - y);
 
-            if(distance < closest_distance){
+            if (distance < closest_distance)
+            {
                 closest_distance = distance;
                 closest_object = *object_ptr;
             }
@@ -495,28 +538,30 @@ map_features::FeatureObject ParticleFilter::getExpectedFeaturesCloserObject(cons
 }
 
 // transform the keypoints from the object local frame to new frame
-std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(std::vector<geometry_msgs::msg::Point> keypoints, double  x_base, double y_base, double z_base, double theta_base, double x_new, double y_new, double z_new, double theta_new){
+std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(std::vector<geometry_msgs::msg::Point> keypoints, double x_base, double y_base, double z_base, double theta_base, double x_new, double y_new, double z_new, double theta_new)
+{
 
     std::vector<geometry_msgs::msg::Point> transformed_keypoints;
 
-    for (const auto& kp : keypoints) {
+    for (const auto &kp : keypoints)
+    {
         geometry_msgs::msg::Point transformed_kp;
-        
+
         // Step 1: Rotate the keypoint by the object's orientation
         double rotated_x = std::cos(theta_base) * kp.x - std::sin(theta_base) * kp.y;
         double rotated_y = std::sin(theta_base) * kp.x + std::cos(theta_base) * kp.y;
-        double rotated_z=0;
+        double rotated_z = 0;
 
         // Step 2: Translate the keypoint to the object's global position
         double global_x = rotated_x + x_base;
         double global_y = rotated_y + y_base;
-        double global_z=0;
+        double global_z = 0;
 
         // Step 3: Transform the keypoint from the global frame to the new frame
         transformed_kp.x = std::cos(theta_new) * (global_x - x_new) + std::sin(theta_new) * (global_y - y_new);
         transformed_kp.y = -std::sin(theta_new) * (global_x - x_new) + std::cos(theta_new) * (global_y - y_new);
         transformed_kp.z = 0; // Assuming 2D transformation
-        
+
         transformed_keypoints.push_back(transformed_kp);
     }
 
@@ -524,26 +569,46 @@ std::vector<geometry_msgs::msg::Point> ParticleFilter::getKeypointsInNewFrame(st
 }
 
 // transform angle from the map frame to the particle frame
-double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, double particle_theta) {
+double ParticleFilter::transformAngleToParticleFrame(double feature_theta_map, double particle_theta)
+{
+
+    // print the theta of the feature and the particle
+    RCLCPP_INFO(this->get_logger(), "Feature theta: %.2f, Particle theta: %.2f", feature_theta_map, particle_theta);
+    // Transform the angle from the map frame to the particle frame
+    if (particle_theta < -M_PI)
+        particle_theta += 2 * M_PI;
+    else if (particle_theta > M_PI)
+        particle_theta -= 2 * M_PI;
+
+    // get feature_theta_map from degrees to radians
+    feature_theta_map = feature_theta_map * (M_PI / 180.0);
+    if (feature_theta_map < -M_PI)
+        feature_theta_map += 2 * M_PI;
+    else if (feature_theta_map > M_PI)
+        feature_theta_map -= 2 * M_PI;
+
+    // compute the angle between the feature and the particle
+
     double angle = feature_theta_map - particle_theta;
 
-    while (angle > M_PI) angle -= 2 * M_PI;
-    while (angle < -M_PI) angle += 2 * M_PI;
+    while (angle > M_PI)
+        angle -= 2 * M_PI;
+    while (angle < -M_PI)
+        angle += 2 * M_PI;
 
     return angle;
 }
 
 // compute the likelihood for the orientation of the corner feature
-double ParticleFilter::computeAngleLikelihood(double measured_angle, double expected_angle, double sigma) {
-    if(measured_angle > M_PI) measured_angle -= 2 * M_PI;
-    if(measured_angle < -M_PI) measured_angle += 2 * M_PI;
-    if(expected_angle > M_PI) expected_angle -= 2 * M_PI;
-    if(expected_angle < -M_PI) expected_angle += 2 * M_PI;
+double ParticleFilter::computeAngleLikelihood(double measured_angle, double expected_angle, double sigma)
+{
 
     double error = measured_angle - expected_angle;
 
-    while (error > M_PI) error -= 2 * M_PI;
-    while (error < -M_PI) error += 2 * M_PI;
+    while (error > M_PI)
+        error -= 2 * M_PI;
+    while (error < -M_PI)
+        error += 2 * M_PI;
 
     double coeff = 1.0 / std::sqrt(2.0 * M_PI * sigma * sigma);
     double exponent = -0.5 * (error * error) / (sigma * sigma);
@@ -552,17 +617,20 @@ double ParticleFilter::computeAngleLikelihood(double measured_angle, double expe
 }
 
 // compute the likelihood of a corner feature based on distance and angle
-double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta) {
+double ParticleFilter::computeLikelihoodCorner(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta)
+{
     std::vector<map_features::FeatureCorner> expected_features = getExpectedFeaturesCorner(p);
 
     double min_dist = std::numeric_limits<double>::max();
-    map_features::FeatureCorner best_corner(0, 0,0, 0);
+    map_features::FeatureCorner best_corner(0, 0, 0, 0);
 
     double likelihood = 1.0;
-    
-    for (const auto &exp : expected_features) {
+
+    for (const auto &exp : expected_features)
+    {
         double dist = std::hypot(noisy_x - exp.x, noisy_y - exp.y);
-        if (dist < min_dist) {
+        if (dist < min_dist)
+        {
             min_dist = dist;
             best_corner = exp;
         }
@@ -571,42 +639,47 @@ double ParticleFilter::computeLikelihoodCorner( const Particle &p, double noisy_
     // Compute likelihood based on distance and angle
     double expected_feature_angle = transformAngleToParticleFrame(best_corner.theta, p.theta);
     double angle_likelihood = computeAngleLikelihood(measured_theta, expected_feature_angle, sigma_theta);
-    double distance_likelihood=(std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos)))/std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
+    double distance_likelihood = (std::exp(-(min_dist * min_dist) / (2 * sigma_pos * sigma_pos))) / std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
 
-    if(with_angle_){
+    if (with_angle_)
+    {
         likelihood *= (angle_likelihood * distance_likelihood);
     }
-    else{
-        likelihood *= distance_likelihood; 
+    else
+    {
+        likelihood *= distance_likelihood;
     }
 
     return likelihood;
 }
 
 // compute the likelihood of an object feature based on distance to keypoints of object
-double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence){
+double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x, double noisy_y, double noisy_z, double measured_theta, double sigma_pos, double sigma_theta, const std::string type, double confidence)
+{
     map_features::FeatureObject expected_Object = getExpectedFeaturesCloserObject(p, type, noisy_x, noisy_y, noisy_z);
 
-    //cumpute the keypoints from the closest object in the particles frame
-    std::vector<geometry_msgs::msg::Point> expected_keypoints = getKeypointsInNewFrame(expected_Object.keypoints, 
-        expected_Object.x, expected_Object.y, 0, expected_Object.theta,
-        p.x, p.y, 0, p.theta);
+    // cumpute the keypoints from the closest object in the particles frame
+    std::vector<geometry_msgs::msg::Point> expected_keypoints = getKeypointsInNewFrame(expected_Object.keypoints,
+                                                                                       expected_Object.x, expected_Object.y, 0, expected_Object.theta,
+                                                                                       p.x, p.y, 0, p.theta);
 
-    //compute the keypoints that the robot sees based on the center that the robot sees and object 
-    std::vector<geometry_msgs::msg::Point> observed_keypoints = getKeypointsInNewFrame(expected_Object.keypoints, 
-        noisy_x, noisy_y, 0, measured_theta,
-        0, 0, 0, 0);  
-    
+    // compute the keypoints that the robot sees based on the center that the robot sees and object
+    std::vector<geometry_msgs::msg::Point> observed_keypoints = getKeypointsInNewFrame(expected_Object.keypoints,
+                                                                                       noisy_x, noisy_y, 0, measured_theta,
+                                                                                       0, 0, 0, 0);
+
     double likelihood = 0.0;
 
-    //compute the distance between the keypoints that the robot sees and the expected keypoints
-    for (const auto &observed_kp : observed_keypoints) {
+    // compute the distance between the keypoints that the robot sees and the expected keypoints
+    for (const auto &observed_kp : observed_keypoints)
+    {
         double min_dist = std::numeric_limits<double>::max();
-        for (const auto &expected_kp : expected_keypoints) {
+        for (const auto &expected_kp : expected_keypoints)
+        {
             double dist = std::hypot(observed_kp.x - expected_kp.x, observed_kp.y - expected_kp.y);
             min_dist = std::min(min_dist, dist);
         }
-        double distance_likelihood = (std::exp(- (min_dist * min_dist) / (2 * sigma_pos * sigma_pos))) / 
+        double distance_likelihood = (std::exp(-(min_dist * min_dist) / (2 * sigma_pos * sigma_pos))) /
                                      std::sqrt(2 * M_PI * sigma_pos * sigma_pos);
         likelihood += distance_likelihood;
     }
@@ -617,9 +690,10 @@ double ParticleFilter::computeLikelihoodObject(const Particle &p, double noisy_x
 }
 
 // decode a feature message received from the topic features into a DecodedMsg structure
-ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feature& msg){
+ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feature &msg)
+{
     DecodedMsg feature;
-    
+
     feature.x = msg.position.x;
     feature.y = msg.position.y;
     feature.z = msg.position.z;
@@ -630,14 +704,15 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
         msg.orientation.x,
         msg.orientation.y,
         msg.orientation.z,
-        msg.orientation.w
-    );
+        msg.orientation.w);
     double roll, pitch, yaw;
     tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-    feature.theta = yaw; 
+    feature.theta = yaw;
 
-    for (size_t i = 0; i < 3; ++i) {
-        for (size_t j = 0; j < 3; ++j) {
+    for (size_t i = 0; i < 3; ++i)
+    {
+        for (size_t j = 0; j < 3; ++j)
+        {
             feature.covariance_pos[i][j] = msg.position_covariance[i * 3 + j];
             feature.covariance_angle[i][j] = msg.orientation_covariance[i * 3 + j];
         }
@@ -654,21 +729,24 @@ ParticleFilter::DecodedMsg ParticleFilter::decodeMsg(const robot_msgs::msg::Feat
 
 #pragma region resampling functions
 
-void ParticleFilter::multinomialResample() {
+void ParticleFilter::multinomialResample()
+{
     std::vector<Particle> new_particles;
     new_particles.reserve(num_particles_);
 
     std::vector<double> cumulative_weights(num_particles_);
     cumulative_weights[0] = particles_[0].weight;
-    for (size_t i = 1; i < num_particles_; i++) {
+    for (size_t i = 1; i < num_particles_; i++)
+    {
         cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
     }
 
     std::uniform_real_distribution<double> dist(0.0, cumulative_weights.back());
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
-    
-    for (size_t i = 0; i < num_particles_; i++) {
+
+    for (size_t i = 0; i < num_particles_; i++)
+    {
         double r = dist(generator_);
         auto it = std::lower_bound(cumulative_weights.begin(), cumulative_weights.end(), r);
         int index = std::distance(cumulative_weights.begin(), it);
@@ -676,42 +754,47 @@ void ParticleFilter::multinomialResample() {
     }
 
     particles_ = new_particles;
-
 }
 
-void ParticleFilter::stratifiedResample() {
+void ParticleFilter::stratifiedResample()
+{
     std::vector<Particle> new_particles;
     new_particles.reserve(num_particles_);
 
     std::vector<double> cumulative_weights(num_particles_);
     cumulative_weights[0] = particles_[0].weight;
-    for (size_t i = 1; i < num_particles_; i++) {
+    for (size_t i = 1; i < num_particles_; i++)
+    {
         cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
     }
-      
+
     std::uniform_real_distribution<double> dist(0.0, 1.0 / num_particles_);
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
     int index = 0;
-    for (size_t i = 0; i < num_particles_; i++) {
-        double r = dist(generator_);                  //Generate new random variable for each particle
+    for (size_t i = 0; i < num_particles_; i++)
+    {
+        double r = dist(generator_); // Generate new random variable for each particle
         double U = r + (i / static_cast<double>(num_particles_));
-        while (U > cumulative_weights[index]) index++;
+        while (U > cumulative_weights[index])
+            index++;
         new_particles.push_back(particles_[index]);
     }
 
     particles_ = new_particles;
 }
 
-void ParticleFilter::systematicResample() {
+void ParticleFilter::systematicResample()
+{
     std::vector<Particle> new_particles;
     new_particles.reserve(num_particles_);
 
     // Compute cumulative weights
     std::vector<double> cumulative_weights(num_particles_);
     cumulative_weights[0] = particles_[0].weight;
-    for (size_t i = 1; i < num_particles_; i++) {
+    for (size_t i = 1; i < num_particles_; i++)
+    {
         cumulative_weights[i] = cumulative_weights[i - 1] + particles_[i].weight;
     }
 
@@ -720,32 +803,38 @@ void ParticleFilter::systematicResample() {
     generator_.seed(seed);
     double r = dist(generator_);
     int index = 0;
-    for (size_t i = 0; i < num_particles_; i++) {
+    for (size_t i = 0; i < num_particles_; i++)
+    {
         double U = r + (i / static_cast<double>(num_particles_));
-        while (U > cumulative_weights[index]) index++;
+        while (U > cumulative_weights[index])
+            index++;
         new_particles.push_back(particles_[index]);
     }
 
     particles_ = new_particles;
 }
 
-void ParticleFilter::residualResample() {
+void ParticleFilter::residualResample()
+{
     std::vector<Particle> new_particles;
     new_particles.reserve(num_particles_);
 
     std::vector<double> residual_weights;
     int total_copies = 0;
 
-    for (const auto &p : particles_) {
+    for (const auto &p : particles_)
+    {
         int num_copies = static_cast<int>(p.weight * num_particles_);
         total_copies += num_copies;
-        for (int j = 0; j < num_copies; j++) new_particles.push_back(p);
+        for (int j = 0; j < num_copies; j++)
+            new_particles.push_back(p);
         residual_weights.push_back((p.weight * num_particles_) - num_copies);
     }
 
     std::vector<double> cumulative_weights;
     double sum_residuals = 0.0;
-    for (double rw : residual_weights) {
+    for (double rw : residual_weights)
+    {
         sum_residuals += rw;
         cumulative_weights.push_back(sum_residuals);
     }
@@ -753,10 +842,13 @@ void ParticleFilter::residualResample() {
     std::uniform_real_distribution<double> dist(0.0, sum_residuals);
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
-    while (total_copies < num_particles_) {
+    while (total_copies < num_particles_)
+    {
         double r = dist(generator_);
-        for (size_t i = 0; i < cumulative_weights.size(); i++) {
-            if (r <= cumulative_weights[i]) {
+        for (size_t i = 0; i < cumulative_weights.size(); i++)
+        {
+            if (r <= cumulative_weights[i])
+            {
                 new_particles.push_back(particles_[i]);
                 total_copies++;
                 break;
@@ -774,17 +866,19 @@ void ParticleFilter::residualResample() {
 //! Particle Filter Functions !//
 #pragma region pf functions
 
-void ParticleFilter::initializeParticles_pgm() {
+void ParticleFilter::initializeParticles_pgm()
+{
     // Sample random particles
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> index_dist(0, free_pixels.size() - 1);
     std::uniform_real_distribution<> theta_dist(-M_PI, M_PI);
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
     double init_weight = 1.0 / num_particles_;
 
     particles_.resize(num_particles_);
-    for (auto &p : particles_) {
+    for (auto &p : particles_)
+    {
         auto [x_pix, y_pix] = free_pixels[index_dist(gen)];
         auto [x, y] = pixelToWorld(x_pix, y_pix, resolution, origin, pgm.height);
 
@@ -811,42 +905,46 @@ void ParticleFilter::initializeParticles_pgm() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     } */
 
-   /*  for (auto &p : particles_) {
-        p.x = dist_x(generator_);
-        p.y = dist_y(generator_);
-        p.theta = dist_theta(generator_);
-        p.weight = 1.0 / num_particles_;
-    }  */
-
+    /*  for (auto &p : particles_) {
+         p.x = dist_x(generator_);
+         p.y = dist_y(generator_);
+         p.theta = dist_theta(generator_);
+         p.weight = 1.0 / num_particles_;
+     }  */
 }
 
-void ParticleFilter::initializeParticles() {
+void ParticleFilter::initializeParticles()
+{
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     generator_.seed(seed);
 
-    std::uniform_real_distribution<double> dist_x(-room_size_x_/2, room_size_x_/2);
-    std::uniform_real_distribution<double> dist_y(-room_size_y_/2, room_size_y_/2);
-    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI); 
+    std::uniform_real_distribution<double> dist_x(-room_size_x_ / 2, room_size_x_ / 2);
+    std::uniform_real_distribution<double> dist_y(-room_size_y_ / 2, room_size_y_ / 2);
+    std::uniform_real_distribution<double> dist_theta(-M_PI, M_PI);
 
     log_file_.open("log_pf.txt", std::ios::app);
-    if (!log_file_.is_open()) {
+    if (!log_file_.is_open())
+    {
         RCLCPP_ERROR(this->get_logger(), "Failed to open log file for writing.");
         return;
     }
 
     particles_.resize(num_particles_);
-    for (auto &p : particles_) {
+    for (auto &p : particles_)
+    {
         p.x = dist_x(generator_);
         p.y = dist_y(generator_);
         p.theta = dist_theta(generator_);
         p.weight = 1.0 / num_particles_;
-    } 
+    }
 
     RCLCPP_INFO(this->get_logger(), "Initialized %f particles", num_particles_);
 }
 
-void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) {
-    if (particles_.empty()) {
+void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+    if (particles_.empty())
+    {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
@@ -860,8 +958,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
         msg->pose.pose.orientation.x,
         msg->pose.pose.orientation.y,
         msg->pose.pose.orientation.z,
-        msg->pose.pose.orientation.w
-    );
+        msg->pose.pose.orientation.w);
 
     double roll, pitch, odom_theta;
     tf2::Matrix3x3(odom_q).getRPY(roll, pitch, odom_theta);
@@ -873,7 +970,7 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     std::uniform_real_distribution<double> noise_x(-motion_x_variance_, motion_x_variance_);
     std::uniform_real_distribution<double> noise_y(-motion_y_variance_, motion_y_variance_);
     std::uniform_real_distribution<double> noise_theta(-motion_angle_variance_, motion_angle_variance_);
-    
+
     double alpha_odom = atan2(delta_y_odom, delta_x_odom);
     double alpha_robot = alpha_odom - last_theta_;
     double delta_x_robot = delta_distance * std::cos(alpha_robot);
@@ -881,26 +978,31 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     double delta_theta_odom = odom_theta - last_theta_;
 
     // update particles if significant motion is detected
-    if (delta_distance > motion_delta_distance_ || std::abs(delta_theta_odom) > motion_delta_angle_) {
-        if (!last_map_msg_) {
+    if (delta_distance > motion_delta_distance_ || std::abs(delta_theta_odom) > motion_delta_angle_)
+    {
+        if (!last_map_msg_)
+        {
             RCLCPP_WARN(this->get_logger(), "No keypoint message available yet.");
             return;
         }
 
-        for(auto &p : particles_){
+        for (auto &p : particles_)
+        {
 
             p.x += delta_x_robot * std::cos(p.theta) - delta_y_robot * std::sin(p.theta) + noise_x(generator_);
             p.y += delta_x_robot * std::sin(p.theta) + delta_y_robot * std::cos(p.theta) + noise_y(generator_);
-            p.theta +=  delta_theta_odom  + noise_theta(generator_) ;
-    
-            if (p.theta > M_PI) p.theta -= 2 * M_PI;
-            if (p.theta < -M_PI) p.theta += 2 * M_PI;
+            p.theta += delta_theta_odom + noise_theta(generator_);
+
+            if (p.theta > M_PI)
+                p.theta -= 2 * M_PI;
+            if (p.theta < -M_PI)
+                p.theta += 2 * M_PI;
         }
 
         last_x_ = odom_x;
         last_y_ = odom_y;
         last_theta_ = odom_theta;
-        
+
         // update the particles weights
         measurementUpdate(last_map_msg_);
     }
@@ -908,35 +1010,40 @@ void ParticleFilter::motionUpdate(const nav_msgs::msg::Odometry::SharedPtr msg) 
     publishParticles();
 }
 
-void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg){
-    if (particles_.empty()) {
+void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::SharedPtr msg)
+{
+    if (particles_.empty())
+    {
         RCLCPP_WARN(this->get_logger(), "No particles to update.");
         return;
     }
-    
-    if (!new_map) {
+
+    if (!new_map)
+    {
         return;
     }
     new_map = false;
 
-    for (auto &p : particles_) {
-        double likelihood = 0;  
+    for (auto &p : particles_)
+    {
+        double likelihood = 0;
 
-        for (const auto &obs_msg : msg->features) {
+        for (const auto &obs_msg : msg->features)
+        {
             DecodedMsg obs = decodeMsg(obs_msg);
 
-            double sigma_x = std::sqrt(obs.covariance_pos[0][0]);  
-            double sigma_y = std::sqrt(obs.covariance_pos[1][1]); 
+            double sigma_x = std::sqrt(obs.covariance_pos[0][0]);
+            double sigma_y = std::sqrt(obs.covariance_pos[1][1]);
             double sigma_z = std::sqrt(obs.covariance_pos[2][2]);
-            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]); 
-            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y ) / 2.0);
+            double sigma_theta = std::sqrt(obs.covariance_angle[2][2]);
+            double sigma_pos = std::sqrt((sigma_x * sigma_x + sigma_y * sigma_y) / 2.0);
 
             //! VER ISTO (os noises não são só para o calculo da likelihood?)
             /*std::normal_distribution<double> noise_pos_x(0.0, sigma_x);
             std::normal_distribution<double> noise_pos_y(0.0, sigma_y);
             std::normal_distribution<double> noise_pos_z(0.0, sigma_z);
             std::normal_distribution<double> noise_theta(0.0, sigma_theta);
-              
+
             double noisy_x = obs.x + noise_pos_x(generator_);
             double noisy_y = obs.y + noise_pos_y(generator_);
             double noisy_z = obs.z + noise_pos_z(generator_);
@@ -944,124 +1051,140 @@ void ParticleFilter::measurementUpdate(const robot_msgs::msg::FeatureArray::Shar
             // ! ########
 
             // Compute likelihood based on feature type
-            if(obs.type == "corner"){
-                likelihood+=computeLikelihoodCorner(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta);
+            if (obs.type == "corner")
+            {
+                likelihood += computeLikelihoodCorner(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta);
             }
-            else {
-                likelihood+=computeLikelihoodObject(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta, obs.type, obs.confidence);
+            else
+            {
+                likelihood += computeLikelihoodObject(p, obs.x, obs.y, obs.z, obs.theta, sigma_pos, sigma_theta, obs.type, obs.confidence);
             }
-
         }
-    
-        p.weight *= likelihood;     
+
+        p.weight *= likelihood;
     }
 
     // Penalize particles outside the room limits
-    for ( auto &p : particles_){
+    for (auto &p : particles_)
+    {
         /* if(p.x > room_size_x_/2 || p.x < -room_size_x_/2 || p.y > room_size_y_/2 || p.y < -room_size_y_/2){
             p.weight = p.weight/ 2;
         } */
-       bool penalize = !isParticleInFreeSpace(p.x, p.y, pgm, resolution, origin);
-       
-       if(penalize){
-        p.weight = p.weight/2;
-       }
+        bool penalize = !isParticleInFreeSpace(p.x, p.y, pgm, resolution, origin);
 
-    }   
-   
+        if (penalize)
+        {
+            p.weight = p.weight / 2;
+        }
+    }
+
     normalizeWeights();
 
-    //perform resampling
-    resampleParticles(ResamplingAmount::ESS, ResamplingMethod::RESIDUAL); 
-    
+    // perform resampling
+    resampleParticles(ResamplingAmount::ESS, ResamplingMethod::RESIDUAL);
+
     // Replace worst particles if resampling flag is not set
-    if (!resample_flag_) {
-        //replaceWorstParticles(replace_worst_percentage_);
+    if (!resample_flag_)
+    {
+        // replaceWorstParticles(replace_worst_percentage_);
         replaceWorstParticles_pgm(replace_worst_percentage_);
-    } else {
+    }
+    else
+    {
         resample_flag_ = false;
     }
 }
 
-void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod method) {
-    if (particles_.empty()) {
+void ParticleFilter::resampleParticles(ResamplingAmount type, ResamplingMethod method)
+{
+    if (particles_.empty())
+    {
         RCLCPP_WARN(this->get_logger(), "No particles to resample.");
         return;
     }
 
     double max_weight = maxWeight();
     double ess = 1.0 / std::accumulate(particles_.begin(), particles_.end(), 0.0,
-    [](double sum, const Particle &p) { return sum + (p.weight * p.weight); });
+                                       [](double sum, const Particle &p)
+                                       { return sum + (p.weight * p.weight); });
 
     RCLCPP_INFO(this->get_logger(), "Max weight: %f, ESS: %f", max_weight, ess);
 
-    switch(type){
-        case ResamplingAmount::ESS:
-            if (ess > num_particles_ * resample_ess_threshold_) {
-                RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
-                return;
-            }
-            break;
-        case ResamplingAmount::MAX_WEIGHT:
-            if (max_weight < resample_max_weight_threshold_/num_particles_) {
-                RCLCPP_INFO(this->get_logger(), "Skipping resampling, max weight is high.");
-                return;
-            }
-            break;
+    switch (type)
+    {
+    case ResamplingAmount::ESS:
+        if (ess > num_particles_ * resample_ess_threshold_)
+        {
+            RCLCPP_INFO(this->get_logger(), "Skipping resampling, particles are well-distributed.");
+            return;
+        }
+        break;
+    case ResamplingAmount::MAX_WEIGHT:
+        if (max_weight < resample_max_weight_threshold_ / num_particles_)
+        {
+            RCLCPP_INFO(this->get_logger(), "Skipping resampling, max weight is high.");
+            return;
+        }
+        break;
     }
 
-    resample_flag_=true;
-
+    resample_flag_ = true;
 
     // Perform resampling based on the specified method
-    switch (method) {
-        case ResamplingMethod::MULTINOMIAL:
-            multinomialResample();
-            break;
-        case ResamplingMethod::STRATIFIED:
-            stratifiedResample();
-            break;
-        case ResamplingMethod::SYSTEMATIC:
-            systematicResample();
-            break;
-        case ResamplingMethod::RESIDUAL:
-            residualResample();
-            break;
+    switch (method)
+    {
+    case ResamplingMethod::MULTINOMIAL:
+        multinomialResample();
+        break;
+    case ResamplingMethod::STRATIFIED:
+        stratifiedResample();
+        break;
+    case ResamplingMethod::SYSTEMATIC:
+        systematicResample();
+        break;
+    case ResamplingMethod::RESIDUAL:
+        residualResample();
+        break;
     }
 
     // Reset particle weights after resampling
-    for(auto &p : particles_){
+    for (auto &p : particles_)
+    {
         p.weight = 1.0 / num_particles_;
     }
 
     // Inject random particles base on number of resamples performed
     iterationCounter++;
-    if(iterationCounter == inject_num_iterations_){
+    if (iterationCounter == inject_num_iterations_)
+    {
         RCLCPP_INFO(this->get_logger(), "Injecting random particles.");
-        //injectRandomParticles(inject_percentage_);
+        // injectRandomParticles(inject_percentage_);
         injectRandomParticles_pgm(inject_percentage_);
 
         iterationCounter = 0;
-    } 
-
+    }
 }
 
 // compute the estimated pose based on the top-weighted particles
-void ParticleFilter::computeEstimatedPose(){
-    if (particles_.empty()) return;
+void ParticleFilter::computeEstimatedPose()
+{
+    if (particles_.empty())
+        return;
 
     std::vector<Particle> sorted_particles = particles_;
-    std::sort(sorted_particles.begin(), sorted_particles.end(), 
-        [](const Particle &a, const Particle &b) {
-            return a.weight > b.weight;  
-        });
+    std::sort(sorted_particles.begin(), sorted_particles.end(),
+              [](const Particle &a, const Particle &b)
+              {
+                  return a.weight > b.weight;
+              });
 
     // Use only the top estimate_num_particles_ particles
     int num_top_particles = std::min(estimate_num_particles_, static_cast<int>(sorted_particles.size()));
 
     double x_sum = 0, y_sum = 0, theta_sum = 0, theta_x_sum = 0, theta_y_sum = 0, weight_sum = 0;
 
-    for (int i = 0; i < num_top_particles; i++) {
+    for (int i = 0; i < num_top_particles; i++)
+    {
         const auto &p = sorted_particles[i];
         x_sum += p.x * p.weight;
         y_sum += p.y * p.weight;
@@ -1071,7 +1194,8 @@ void ParticleFilter::computeEstimatedPose(){
         weight_sum += p.weight;
     }
 
-    if (weight_sum > 0) {
+    if (weight_sum > 0)
+    {
         x_sum /= weight_sum;
         y_sum /= weight_sum;
         theta_sum /= weight_sum;
@@ -1080,23 +1204,26 @@ void ParticleFilter::computeEstimatedPose(){
     }
 
     // Compute the final estimated pose
-    x_last_final=x_sum;
-    y_last_final=y_sum;
+    x_last_final = x_sum;
+    y_last_final = y_sum;
     theta_last_final = std::atan2(theta_y_sum, theta_x_sum);
 
-
-    if (theta_last_final > M_PI) theta_last_final -= 2 * M_PI;
-    if (theta_last_final < -M_PI) theta_last_final += 2 * M_PI;
-    
+    if (theta_last_final > M_PI)
+        theta_last_final -= 2 * M_PI;
+    if (theta_last_final < -M_PI)
+        theta_last_final += 2 * M_PI;
 }
 
 // publish the estimated pose and the map to odom transform
-void ParticleFilter::publishEstimatedPose() {
-    if (particles_.empty()) return;
+void ParticleFilter::publishEstimatedPose()
+{
+    if (particles_.empty())
+        return;
 
     computeEstimatedPose();
-    
-    if (!msg_odom_base_link_) {
+
+    if (!msg_odom_base_link_)
+    {
         RCLCPP_WARN(this->get_logger(), "Skipping pose publication: No odometry data available.");
         return;
     }
@@ -1136,7 +1263,8 @@ void ParticleFilter::publishEstimatedPose() {
     RCLCPP_INFO(this->get_logger(), "Published estimated pose (Top 10 weighted particles).");
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<ParticleFilter>());
     rclcpp::shutdown();
